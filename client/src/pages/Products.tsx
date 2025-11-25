@@ -49,6 +49,7 @@ export default function Products() {
     unit: 'un' as 'un' | 'kg' | 'g' | 'pack' | 'box',
     categoryId: '',
     minStock: '5',
+    image: '',
   });
 
   const createProductMutation = useMutation({
@@ -57,7 +58,7 @@ export default function Products() {
       queryClient.invalidateQueries({ queryKey: ['/api/products'] });
       queryClient.invalidateQueries({ queryKey: ['/api/system/edit-count'] });
       setIsAddOpen(false);
-      setNewProduct({ name: '', sku: '', price: '', costPrice: '', stock: '', unit: 'un', categoryId: '', minStock: '5' });
+      setNewProduct({ name: '', sku: '', price: '', costPrice: '', stock: '', unit: 'un', categoryId: '', minStock: '5', image: '' });
       toast({ title: "Sucesso", description: "Produto cadastrado!" });
     },
     onError: (error: Error) => {
@@ -207,7 +208,7 @@ export default function Products() {
       stock: newProduct.stock || '0',
       minStock: newProduct.minStock || '5',
       unit: newProduct.unit,
-      image: ''
+      image: newProduct.image || ''
     });
   };
 
@@ -411,6 +412,19 @@ export default function Products() {
                     </div>
                   </div>
                 </div>
+
+                <div className="grid gap-2">
+                  <Label>URL da Imagem (Opcional)</Label>
+                  <Input 
+                    value={newProduct.image} 
+                    onChange={e => setNewProduct({...newProduct, image: e.target.value})}
+                    placeholder="https://exemplo.com/imagem.jpg"
+                    data-testid="input-product-image"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Se não adicionar uma imagem, será exibida a primeira letra do nome do produto.
+                  </p>
+                </div>
               </div>
               <Button 
                 onClick={handleSaveProduct} 
@@ -468,13 +482,28 @@ export default function Products() {
                 return (
                   <TableRow key={product.id} data-testid={`row-product-${product.id}`}>
                     <TableCell className="font-medium">
-                      <div className="flex items-center gap-2">
-                        {parsedStock <= parsedMinStock && (
-                          <AlertTriangle className="h-4 w-4 text-destructive" />
+                      <div className="flex items-center gap-3">
+                        {product.image ? (
+                          <img 
+                            src={product.image} 
+                            alt={product.name}
+                            className="h-10 w-10 rounded-lg object-cover border border-border"
+                          />
+                        ) : (
+                          <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center text-primary font-bold text-sm border border-border">
+                            {product.name.charAt(0).toUpperCase()}
+                          </div>
                         )}
-                        {product.name}
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            {parsedStock <= parsedMinStock && (
+                              <AlertTriangle className="h-4 w-4 text-destructive" />
+                            )}
+                            {product.name}
+                          </div>
+                          <div className="text-xs text-muted-foreground">{product.sku}</div>
+                        </div>
                       </div>
-                      <div className="text-xs text-muted-foreground">{product.sku}</div>
                     </TableCell>
                     <TableCell>
                       <Badge variant="outline" className={category?.color}>

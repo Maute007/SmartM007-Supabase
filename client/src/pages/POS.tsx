@@ -253,8 +253,8 @@ export default function POS() {
                       {product.image ? (
                         <img src={product.image} alt={product.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300" />
                       ) : (
-                        <div className="w-full h-full flex items-center justify-center text-muted-foreground">
-                          <ShoppingBag className="h-8 w-8 opacity-20" />
+                        <div className="w-full h-full flex items-center justify-center text-primary/80 text-5xl font-bold bg-primary/10">
+                          {product.name.charAt(0).toUpperCase()}
                         </div>
                       )}
                       {parsedStock <= parsedMinStock && parsedStock > 0 && (
@@ -313,8 +313,14 @@ export default function POS() {
                 if (!product) return null;
                 return (
                   <div key={item.productId} className="flex gap-3 p-3 bg-muted/30 rounded-lg border border-transparent hover:border-border transition-colors" data-testid={`cart-item-${item.productId}`}>
-                    <div className="h-12 w-12 rounded-md bg-white overflow-hidden shrink-0">
-                       {product.image && <img src={product.image} alt="" className="h-full w-full object-cover" />}
+                    <div className="h-12 w-12 rounded-md overflow-hidden shrink-0 flex items-center justify-center">
+                       {product.image ? (
+                         <img src={product.image} alt="" className="h-full w-full object-cover" />
+                       ) : (
+                         <div className="h-full w-full flex items-center justify-center bg-primary/10 text-primary font-bold text-lg">
+                           {product.name.charAt(0).toUpperCase()}
+                         </div>
+                       )}
                     </div>
                     <div className="flex-1 min-w-0">
                       <h4 className="text-sm font-medium truncate">{product.name}</h4>
