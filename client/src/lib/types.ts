@@ -39,7 +39,9 @@ export interface Sale {
   userId: string;
   items: CartItem[];
   total: number;
-  paymentMethod: 'cash' | 'card' | 'pix';
+  amountReceived?: number;
+  change?: number;
+  paymentMethod: 'cash' | 'card' | 'pix' | 'mpesa' | 'emola' | 'pos' | 'bank';
   timestamp: Date;
 }
 

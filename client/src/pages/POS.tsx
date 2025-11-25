@@ -49,13 +49,23 @@ export default function POS() {
     discountAmount = activeDiscount.value;
   }
 
+  const [amountReceived, setAmountReceived] = useState(0);
+  
   const cartTotal = Math.max(0, subtotal - discountAmount);
+  const change = Math.max(0, amountReceived - cartTotal);
+
   const cartCount = cart.reduce((acc, item) => acc + 1, 0); // Count unique items lines
 
   const handleApplyDiscount = () => {
     setActiveDiscount({ type: discountType, value: discountValue });
     setDiscountOpen(false);
   };
+  
+  // Reset amount received when modal opens
+  const openCheckout = () => {
+     setAmountReceived(0);
+     setCheckoutOpen(true);
+  }
 
   const handleQuantityChange = (productId: string, change: number) => {
     const item = cart.find(i => i.productId === productId);
@@ -112,9 +122,13 @@ export default function POS() {
   };
 
   const handleCheckout = (method: 'cash' | 'card' | 'pix' | 'mpesa' | 'emola' | 'pos' | 'bank') => {
-    checkout(method as any); // Type casting for new methods
+    if (method === 'cash' && amountReceived < cartTotal && amountReceived > 0) {
+       // Could alert here "Valor insuficiente" but for prototype we just proceed or assume exact
+    }
+    checkout(method as any, amountReceived, change); // Type casting for new methods
     setCheckoutOpen(false);
     setActiveDiscount({ type: 'none', value: 0 });
+    setAmountReceived(0);
   };
 
   return (
@@ -334,7 +348,7 @@ export default function POS() {
             <Button 
               className="w-full font-bold shadow-md shadow-primary/20" 
               disabled={cart.length === 0}
-              onClick={() => setCheckoutOpen(true)}
+              onClick={openCheckout}
             >
               Finalizar
               <ArrowRight className="ml-2 h-4 w-4" />
@@ -418,9 +432,36 @@ export default function POS() {
                   })}
                 </div>
               </div>
-              <div className="flex justify-between items-center p-4 bg-primary/5 rounded-lg border border-primary/10">
-                <span className="font-bold text-lg">Total a Pagar</span>
-                <span className="font-bold text-2xl text-primary">{formatCurrency(cartTotal)}</span>
+              
+              <div className="space-y-3">
+                <div className="flex justify-between items-center p-4 bg-primary/5 rounded-lg border border-primary/10">
+                  <span className="font-bold text-lg">Total a Pagar</span>
+                  <span className="font-bold text-2xl text-primary">{formatCurrency(cartTotal)}</span>
+                </div>
+                
+                <div className="p-4 bg-muted/20 rounded-lg border border-border space-y-3">
+                   <div className="flex justify-between items-center">
+                     <Label className="text-base">Valor Recebido</Label>
+                     <div className="relative w-32">
+                        <Input 
+                          type="number" 
+                          className="text-right pr-8 font-bold" 
+                          value={amountReceived === 0 ? '' : amountReceived}
+                          onChange={(e) => setAmountReceived(Number(e.target.value))}
+                          placeholder="0,00"
+                        />
+                        <span className="absolute right-3 top-2.5 text-muted-foreground text-xs">MZN</span>
+                     </div>
+                   </div>
+                   {amountReceived > 0 && (
+                     <div className="flex justify-between items-center pt-2 border-t border-border">
+                       <span className="font-bold text-muted-foreground">Troco</span>
+                       <span className={`font-bold text-xl ${change < 0 ? 'text-destructive' : 'text-green-600'}`}>
+                         {formatCurrency(change)}
+                       </span>
+                     </div>
+                   )}
+                </div>
               </div>
             </div>
 
@@ -431,6 +472,7 @@ export default function POS() {
                   variant="outline" 
                   className="flex flex-col h-20 gap-1 hover:border-primary hover:bg-primary/5 hover:text-primary transition-all"
                   onClick={() => handleCheckout('cash')}
+                  disabled={amountReceived < cartTotal && amountReceived > 0}
                 >
                   <Banknote className="h-5 w-5" />
                   Dinheiro

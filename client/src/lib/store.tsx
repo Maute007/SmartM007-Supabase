@@ -21,7 +21,7 @@ type Action =
   | { type: 'REMOVE_FROM_CART'; payload: string }
   | { type: 'CLEAR_CART' }
   | { type: 'UPDATE_CART_QUANTITY'; payload: { productId: string; quantity: number } }
-  | { type: 'CHECKOUT'; payload: { paymentMethod: Sale['paymentMethod'] } }
+  | { type: 'CHECKOUT'; payload: { paymentMethod: Sale['paymentMethod']; amountReceived?: number; change?: number } }
   | { type: 'ADD_PRODUCT'; payload: Product }
   | { type: 'UPDATE_PRODUCT'; payload: Product }
   | { type: 'DELETE_PRODUCT'; payload: string }
@@ -49,7 +49,7 @@ const AppContext = createContext<{
   logout: () => void;
   addToCart: (product: Product, quantity: number) => void;
   removeFromCart: (productId: string) => void;
-  checkout: (paymentMethod: Sale['paymentMethod']) => void;
+  checkout: (paymentMethod: Sale['paymentMethod'], amountReceived?: number, change?: number) => void;
 } | undefined>(undefined);
 
 function appReducer(state: AppState, action: Action): AppState {
@@ -86,6 +86,8 @@ function appReducer(state: AppState, action: Action): AppState {
         userId: state.currentUser?.id || 'unknown',
         items: [...state.cart],
         total,
+        amountReceived: action.payload.amountReceived,
+        change: action.payload.change,
         paymentMethod: action.payload.paymentMethod,
         timestamp: new Date(),
       };
@@ -202,9 +204,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     dispatch({ type: 'REMOVE_FROM_CART', payload: productId });
   };
 
-  const checkout = (paymentMethod: Sale['paymentMethod']) => {
+  const checkout = (paymentMethod: Sale['paymentMethod'], amountReceived?: number, change?: number) => {
     if (state.cart.length === 0) return;
-    dispatch({ type: 'CHECKOUT', payload: { paymentMethod } });
+    dispatch({ type: 'CHECKOUT', payload: { paymentMethod, amountReceived, change } });
   };
 
   return (
