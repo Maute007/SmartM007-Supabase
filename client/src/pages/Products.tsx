@@ -22,6 +22,8 @@ export default function Products() {
   const [search, setSearch] = useState('');
   const [isAddOpen, setIsAddOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isCategoryDialogOpen, setIsCategoryDialogOpen] = useState(false);
+  const [newCategory, setNewCategory] = useState({ name: '', color: 'bg-blue-100 text-blue-800' });
 
   const { data: products = [], isLoading: productsLoading } = useQuery({
     queryKey: ['/api/products'],
@@ -88,6 +90,24 @@ export default function Products() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/products'] });
       toast({ title: "Sucesso", description: "Produto deletado!" });
+    },
+    onError: (error: Error) => {
+      toast({ 
+        title: "Erro", 
+        description: error.message,
+        variant: "destructive"
+      });
+    }
+  });
+
+  const createCategoryMutation = useMutation({
+    mutationFn: categoriesApi.create,
+    onSuccess: (createdCategory) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/categories'] });
+      setNewProduct({...newProduct, categoryId: createdCategory.id});
+      setIsCategoryDialogOpen(false);
+      setNewCategory({ name: '', color: 'bg-blue-100 text-blue-800' });
+      toast({ title: "Sucesso", description: "Categoria criada!" });
     },
     onError: (error: Error) => {
       toast({ 
@@ -268,7 +288,7 @@ export default function Products() {
 
                 <div className="grid grid-cols-3 gap-4">
                   <div className="grid gap-2">
-                    <Label>Preço Venda (R$)</Label>
+                    <Label>Preço Venda (MT)</Label>
                     <Input 
                       type="number" 
                       value={newProduct.price} 
@@ -277,7 +297,7 @@ export default function Products() {
                     />
                   </div>
                   <div className="grid gap-2">
-                    <Label>Preço Custo (R$)</Label>
+                    <Label>Preço Custo (MT)</Label>
                     <Input 
                       type="number" 
                       value={newProduct.costPrice} 
@@ -326,19 +346,69 @@ export default function Products() {
                   </div>
                    <div className="grid gap-2">
                     <Label>Categoria</Label>
-                    <Select 
-                      value={newProduct.categoryId} 
-                      onValueChange={(val) => setNewProduct({...newProduct, categoryId: val})}
-                    >
-                      <SelectTrigger data-testid="select-product-category">
-                        <SelectValue placeholder="Categoria" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {categories.map(cat => (
-                          <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <div className="flex gap-2">
+                      <Select 
+                        value={newProduct.categoryId} 
+                        onValueChange={(val) => setNewProduct({...newProduct, categoryId: val})}
+                      >
+                        <SelectTrigger data-testid="select-product-category" className="flex-1">
+                          <SelectValue placeholder="Categoria" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {categories.map(cat => (
+                            <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Dialog open={isCategoryDialogOpen} onOpenChange={setIsCategoryDialogOpen}>
+                        <DialogTrigger asChild>
+                          <Button variant="outline" size="icon" type="button">
+                            <Plus className="h-4 w-4" />
+                          </Button>
+                        </DialogTrigger>
+                        <DialogContent className="sm:max-w-md">
+                          <DialogHeader>
+                            <DialogTitle>Nova Categoria</DialogTitle>
+                          </DialogHeader>
+                          <div className="space-y-4 py-4">
+                            <div className="space-y-2">
+                              <Label>Nome da Categoria</Label>
+                              <Input 
+                                value={newCategory.name}
+                                onChange={(e) => setNewCategory({...newCategory, name: e.target.value})}
+                                placeholder="Ex: Bebidas, Limpeza..."
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label>Cor da Categoria</Label>
+                              <Select 
+                                value={newCategory.color}
+                                onValueChange={(val) => setNewCategory({...newCategory, color: val})}
+                              >
+                                <SelectTrigger>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="bg-blue-100 text-blue-800">Azul</SelectItem>
+                                  <SelectItem value="bg-green-100 text-green-800">Verde</SelectItem>
+                                  <SelectItem value="bg-yellow-100 text-yellow-800">Amarelo</SelectItem>
+                                  <SelectItem value="bg-red-100 text-red-800">Vermelho</SelectItem>
+                                  <SelectItem value="bg-purple-100 text-purple-800">Roxo</SelectItem>
+                                  <SelectItem value="bg-orange-100 text-orange-800">Laranja</SelectItem>
+                                  <SelectItem value="bg-pink-100 text-pink-800">Rosa</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          </div>
+                          <Button 
+                            onClick={() => createCategoryMutation.mutate(newCategory)}
+                            disabled={!newCategory.name || createCategoryMutation.isPending}
+                          >
+                            {createCategoryMutation.isPending ? 'Criando...' : 'Criar Categoria'}
+                          </Button>
+                        </DialogContent>
+                      </Dialog>
+                    </div>
                   </div>
                 </div>
               </div>

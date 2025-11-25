@@ -379,7 +379,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.createNotification({
         userId: req.session.userId!,
         type: "success",
-        message: `Venda realizada com sucesso! Total: R$ ${newSale.total}`,
+        message: `Venda realizada com sucesso! Total: MT ${newSale.total}`,
         metadata: { saleId: newSale.id }
       });
 

@@ -386,7 +386,7 @@ export default function POS() {
                             onClick={() => setDiscountType('fixed')}
                             data-testid="button-discount-fixed"
                           >
-                            <Banknote className="h-4 w-4 mr-2" /> R$ Fixo
+                            <Banknote className="h-4 w-4 mr-2" /> MT Fixo
                           </Button>
                         </div>
                         <div className="grid gap-2">

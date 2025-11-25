@@ -119,7 +119,7 @@ function appReducer(state: AppState, action: Action): AppState {
       newNotifications.unshift({
         id: `notif-sale-${Date.now()}`,
         type: 'success',
-        message: `Venda realizada com sucesso! Total: R$ ${total.toFixed(2)}`,
+        message: `Venda realizada com sucesso! Total: MT ${total.toFixed(2)}`,
         timestamp: new Date(),
         read: false
       });

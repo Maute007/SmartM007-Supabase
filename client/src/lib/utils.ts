@@ -6,8 +6,7 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 export function formatCurrency(value: number): string {
-  return new Intl.NumberFormat('pt-BR', {
-    style: 'currency',
-    currency: 'BRL',
-  }).format(value);
+  // Format as Mozambican Metical (MZN)
+  // Using simple format since pt-MZ locale may not be widely supported
+  return `MT ${value.toFixed(2)}`;
 }

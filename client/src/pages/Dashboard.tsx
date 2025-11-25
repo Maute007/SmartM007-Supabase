@@ -221,7 +221,7 @@ export default function Dashboard() {
                     fontSize={12} 
                     tickLine={false} 
                     axisLine={false} 
-                    tickFormatter={(value) => `R$${value}`} 
+                    tickFormatter={(value) => `MT ${value}`} 
                     dx={-10}
                   />
                   <Tooltip 
@@ -231,7 +231,7 @@ export default function Dashboard() {
                       borderRadius: '12px',
                       boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)'
                     }}
-                    formatter={(value: number) => [`R$ ${value.toFixed(2)}`, 'Vendas']}
+                    formatter={(value: number) => [`MT ${value.toFixed(2)}`, 'Vendas']}
                     labelStyle={{ color: '#666', marginBottom: '0.5rem' }}
                   />
                   <Area 
