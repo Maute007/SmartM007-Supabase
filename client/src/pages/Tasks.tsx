@@ -15,7 +15,10 @@ interface Todo {
   assignedTo: 'all' | 'seller' | 'manager' | 'admin';
   createdBy: string;
   userId: string;
+  userName: string;
 }
+
+const TASKS_STORAGE_KEY = 'fresh_market_tasks_global';
 
 export default function Tasks() {
   const { user } = useAuth();
@@ -23,19 +26,17 @@ export default function Tasks() {
   const [newTodoText, setNewTodoText] = useState('');
 
   useEffect(() => {
-    if (user) {
-      const storedTodos = localStorage.getItem(`tasks_${user.id}`);
-      if (storedTodos) {
-        setTodos(JSON.parse(storedTodos));
-      }
+    const storedTodos = localStorage.getItem(TASKS_STORAGE_KEY);
+    if (storedTodos) {
+      setTodos(JSON.parse(storedTodos));
     }
-  }, [user]);
+  }, []);
 
   useEffect(() => {
-    if (user && todos.length > 0) {
-      localStorage.setItem(`tasks_${user.id}`, JSON.stringify(todos));
+    if (todos.length > 0) {
+      localStorage.setItem(TASKS_STORAGE_KEY, JSON.stringify(todos));
     }
-  }, [todos, user]);
+  }, [todos]);
 
   if (!user) return null;
 
@@ -56,7 +57,8 @@ export default function Tasks() {
       completed: false,
       assignedTo: 'all',
       createdBy: user.name,
-      userId: user.id
+      userId: user.id,
+      userName: user.name
     };
     
     setTodos(prev => [newTodo, ...prev]);
@@ -85,10 +87,12 @@ export default function Tasks() {
     <div className="space-y-6 max-w-4xl mx-auto">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-heading font-bold text-foreground">Minhas Tarefas</h1>
+          <h1 className="text-3xl font-heading font-bold text-foreground">
+            {user.role === 'admin' ? 'Todas as Tarefas' : 'Minhas Tarefas'}
+          </h1>
           <p className="text-muted-foreground">
             {user.role === 'admin' 
-              ? 'Gerencie todas as tarefas da equipe' 
+              ? 'Visualize e gerencie todas as tarefas da equipe' 
               : 'Gerencie suas atividades diárias'}
           </p>
         </div>
@@ -148,7 +152,7 @@ export default function Tasks() {
                       </Badge>
                       {user.role === 'admin' && todo.userId !== user.id && (
                         <Badge variant="outline" className="text-[10px] h-5 px-1.5">
-                          por {todo.createdBy}
+                          por {todo.userName}
                         </Badge>
                       )}
                     </div>

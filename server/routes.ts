@@ -31,6 +31,14 @@ function requireAdmin(req: Request, res: Response, next: Function) {
   next();
 }
 
+// Middleware to check admin or manager role
+function requireAdminOrManager(req: Request, res: Response, next: Function) {
+  if (!req.session.userId || (req.session.role !== 'admin' && req.session.role !== 'manager')) {
+    return res.status(403).json({ error: "Acesso negado. Apenas administradores e gerentes podem realizar esta ação." });
+  }
+  next();
+}
+
 export async function registerRoutes(app: Express): Promise<Server> {
   
   // ==================== AUTH ROUTES ====================
@@ -143,7 +151,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/categories", requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/categories", requireAuth, requireAdminOrManager, async (req: Request, res: Response) => {
     try {
       const data = insertCategorySchema.parse(req.body);
       const newCategory = await storage.createCategory(data);
@@ -199,7 +207,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/products", requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/products", requireAuth, requireAdminOrManager, async (req: Request, res: Response) => {
     try {
       // Check edit permission
       const canEdit = await storage.canUserEdit(req.session.userId!, req.session.role!);
@@ -247,7 +255,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/products/:id", requireAuth, async (req: Request, res: Response) => {
+  app.patch("/api/products/:id", requireAuth, requireAdminOrManager, async (req: Request, res: Response) => {
     try {
       // Check edit permission
       const canEdit = await storage.canUserEdit(req.session.userId!, req.session.role!);
