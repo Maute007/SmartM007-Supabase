@@ -1,38 +1,236 @@
-import { type User, type InsertUser } from "@shared/schema";
-import { randomUUID } from "crypto";
-
-// modify the interface with any CRUD methods
-// you might need
+import { 
+  type User, type InsertUser,
+  type Product, type InsertProduct,
+  type Category, type InsertCategory,
+  type Sale, type InsertSale,
+  type Notification, type InsertNotification,
+  type AuditLog, type InsertAuditLog,
+  type DailyEdit, type InsertDailyEdit,
+  users, products, categories, sales, notifications, auditLogs, dailyEdits
+} from "@shared/schema";
+import { db } from "../db";
+import { eq, and, desc, sql } from "drizzle-orm";
+import bcrypt from "bcrypt";
 
 export interface IStorage {
+  // Users
   getUser(id: string): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
+  getAllUsers(): Promise<User[]>;
   createUser(user: InsertUser): Promise<User>;
+  verifyPassword(username: string, password: string): Promise<User | null>;
+
+  // Categories
+  getAllCategories(): Promise<Category[]>;
+  createCategory(category: InsertCategory): Promise<Category>;
+  deleteCategory(id: string): Promise<void>;
+
+  // Products
+  getAllProducts(): Promise<Product[]>;
+  getProduct(id: string): Promise<Product | undefined>;
+  createProduct(product: InsertProduct): Promise<Product>;
+  updateProduct(id: string, product: Partial<InsertProduct>): Promise<Product | undefined>;
+  deleteProduct(id: string): Promise<void>;
+  updateStock(id: string, quantity: number): Promise<void>;
+
+  // Sales
+  getAllSales(): Promise<Sale[]>;
+  getSalesByUser(userId: string): Promise<Sale[]>;
+  createSale(sale: InsertSale): Promise<Sale>;
+
+  // Notifications
+  getNotificationsByUser(userId: string | null): Promise<Notification[]>;
+  createNotification(notification: InsertNotification): Promise<Notification>;
+  markNotificationAsRead(id: string): Promise<void>;
+
+  // Audit Logs
+  getAllAuditLogs(): Promise<AuditLog[]>;
+  createAuditLog(log: InsertAuditLog): Promise<AuditLog>;
+
+  // Daily Edit Tracking
+  getDailyEdits(userId: string, date: string): Promise<DailyEdit | undefined>;
+  incrementDailyEdits(userId: string, date: string): Promise<void>;
+  canUserEdit(userId: string, role: string): Promise<boolean>;
 }
 
-export class MemStorage implements IStorage {
-  private users: Map<string, User>;
-
-  constructor() {
-    this.users = new Map();
-  }
-
+export class DatabaseStorage implements IStorage {
+  // USERS
   async getUser(id: string): Promise<User | undefined> {
-    return this.users.get(id);
+    const [user] = await db.select().from(users).where(eq(users.id, id)).limit(1);
+    return user;
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
-    return Array.from(this.users.values()).find(
-      (user) => user.username === username,
-    );
+    const [user] = await db.select().from(users).where(eq(users.username, username)).limit(1);
+    return user;
+  }
+
+  async getAllUsers(): Promise<User[]> {
+    return await db.select().from(users);
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {
-    const id = randomUUID();
-    const user: User = { ...insertUser, id };
-    this.users.set(id, user);
+    const hashedPassword = await bcrypt.hash(insertUser.password, 10);
+    const [user] = await db.insert(users).values({
+      ...insertUser,
+      password: hashedPassword
+    }).returning();
     return user;
+  }
+
+  async verifyPassword(username: string, password: string): Promise<User | null> {
+    const user = await this.getUserByUsername(username);
+    if (!user) return null;
+    
+    const isValid = await bcrypt.compare(password, user.password);
+    if (!isValid) return null;
+    
+    return user;
+  }
+
+  // CATEGORIES
+  async getAllCategories(): Promise<Category[]> {
+    return await db.select().from(categories);
+  }
+
+  async createCategory(category: InsertCategory): Promise<Category> {
+    const [newCategory] = await db.insert(categories).values(category).returning();
+    return newCategory;
+  }
+
+  async deleteCategory(id: string): Promise<void> {
+    await db.delete(categories).where(eq(categories.id, id));
+  }
+
+  // PRODUCTS
+  async getAllProducts(): Promise<Product[]> {
+    return await db.select().from(products).orderBy(products.name);
+  }
+
+  async getProduct(id: string): Promise<Product | undefined> {
+    const [product] = await db.select().from(products).where(eq(products.id, id)).limit(1);
+    return product;
+  }
+
+  async createProduct(product: InsertProduct): Promise<Product> {
+    const [newProduct] = await db.insert(products).values(product).returning();
+    return newProduct;
+  }
+
+  async updateProduct(id: string, product: Partial<InsertProduct>): Promise<Product | undefined> {
+    const [updated] = await db.update(products)
+      .set({ ...product, updatedAt: new Date() })
+      .where(eq(products.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteProduct(id: string): Promise<void> {
+    await db.delete(products).where(eq(products.id, id));
+  }
+
+  async updateStock(id: string, quantity: number): Promise<void> {
+    await db.update(products)
+      .set({ stock: sql`${products.stock} - ${quantity}` })
+      .where(eq(products.id, id));
+  }
+
+  // SALES
+  async getAllSales(): Promise<Sale[]> {
+    return await db.select().from(sales).orderBy(desc(sales.createdAt));
+  }
+
+  async getSalesByUser(userId: string): Promise<Sale[]> {
+    return await db.select().from(sales).where(eq(sales.userId, userId)).orderBy(desc(sales.createdAt));
+  }
+
+  async createSale(sale: InsertSale): Promise<Sale> {
+    const [newSale] = await db.insert(sales).values(sale).returning();
+    
+    // Update stock for each item
+    for (const item of sale.items) {
+      await this.updateStock(item.productId, item.quantity);
+    }
+    
+    return newSale;
+  }
+
+  // NOTIFICATIONS
+  async getNotificationsByUser(userId: string | null): Promise<Notification[]> {
+    if (userId) {
+      // Get user-specific + broadcast notifications
+      return await db.select().from(notifications)
+        .where(
+          sql`${notifications.userId} = ${userId} OR ${notifications.userId} IS NULL`
+        )
+        .orderBy(desc(notifications.createdAt))
+        .limit(50);
+    } else {
+      // Broadcast only
+      return await db.select().from(notifications)
+        .where(sql`${notifications.userId} IS NULL`)
+        .orderBy(desc(notifications.createdAt))
+        .limit(50);
+    }
+  }
+
+  async createNotification(notification: InsertNotification): Promise<Notification> {
+    const [newNotification] = await db.insert(notifications).values(notification).returning();
+    return newNotification;
+  }
+
+  async markNotificationAsRead(id: string): Promise<void> {
+    await db.update(notifications)
+      .set({ read: true })
+      .where(eq(notifications.id, id));
+  }
+
+  // AUDIT LOGS
+  async getAllAuditLogs(): Promise<AuditLog[]> {
+    return await db.select().from(auditLogs).orderBy(desc(auditLogs.createdAt)).limit(100);
+  }
+
+  async createAuditLog(log: InsertAuditLog): Promise<AuditLog> {
+    const [newLog] = await db.insert(auditLogs).values(log).returning();
+    return newLog;
+  }
+
+  // DAILY EDIT TRACKING
+  async getDailyEdits(userId: string, date: string): Promise<DailyEdit | undefined> {
+    const [edit] = await db.select().from(dailyEdits)
+      .where(and(eq(dailyEdits.userId, userId), eq(dailyEdits.date, date)))
+      .limit(1);
+    return edit;
+  }
+
+  async incrementDailyEdits(userId: string, date: string): Promise<void> {
+    const existing = await this.getDailyEdits(userId, date);
+    
+    if (existing) {
+      await db.update(dailyEdits)
+        .set({ editCount: sql`${dailyEdits.editCount} + 1` })
+        .where(eq(dailyEdits.id, existing.id));
+    } else {
+      await db.insert(dailyEdits).values({ userId, date, editCount: 1 });
+    }
+  }
+
+  async canUserEdit(userId: string, role: string): Promise<boolean> {
+    if (role === 'admin') return true;
+    if (role === 'manager') {
+      // Managers have a limit of 20 edits per day
+      const today = new Date().toISOString().split('T')[0];
+      const dailyEdit = await this.getDailyEdits(userId, today);
+      return !dailyEdit || dailyEdit.editCount < 20;
+    }
+    if (role === 'seller') {
+      // Sellers have a limit of 5 edits per day
+      const today = new Date().toISOString().split('T')[0];
+      const dailyEdit = await this.getDailyEdits(userId, today);
+      return !dailyEdit || dailyEdit.editCount < 5;
+    }
+    return false;
   }
 }
 
-export const storage = new MemStorage();
+export const storage = new DatabaseStorage();
