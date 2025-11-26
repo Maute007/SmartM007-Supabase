@@ -51,6 +51,7 @@ export interface IStorage {
   // Audit Logs
   getAllAuditLogs(): Promise<AuditLog[]>;
   createAuditLog(log: InsertAuditLog): Promise<AuditLog>;
+  getAuditLogsByUserAndDateRange(userId: string, startDate: string, endDate: string, startHour?: number, endHour?: number): Promise<AuditLog[]>;
 
   // Daily Edit Tracking
   getDailyEdits(userId: string, date: string): Promise<DailyEdit | undefined>;
@@ -233,6 +234,30 @@ export class DatabaseStorage implements IStorage {
   async createAuditLog(log: InsertAuditLog): Promise<AuditLog> {
     const [newLog] = await db.insert(auditLogs).values(log).returning();
     return newLog;
+  }
+
+  async getAuditLogsByUserAndDateRange(
+    userId: string,
+    startDate: string,
+    endDate: string,
+    startHour?: number,
+    endHour?: number
+  ): Promise<AuditLog[]> {
+    let query = db.select().from(auditLogs).where(
+      and(
+        eq(auditLogs.userId, userId),
+        sql`DATE(${auditLogs.createdAt}) >= ${startDate}`,
+        sql`DATE(${auditLogs.createdAt}) <= ${endDate}`
+      )
+    );
+
+    if (startHour !== undefined && endHour !== undefined) {
+      query = query.where(
+        sql`EXTRACT(HOUR FROM ${auditLogs.createdAt}) >= ${startHour} AND EXTRACT(HOUR FROM ${auditLogs.createdAt}) <= ${endHour}`
+      );
+    }
+
+    return await query.orderBy(desc(auditLogs.createdAt));
   }
 
   // DAILY EDIT TRACKING
