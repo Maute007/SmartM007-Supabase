@@ -7,7 +7,8 @@ import {
   type AuditLog, type InsertAuditLog,
   type DailyEdit, type InsertDailyEdit,
   type Task, type InsertTask,
-  users, products, categories, sales, notifications, auditLogs, dailyEdits, tasks
+  type Order, type InsertOrder,
+  users, products, categories, sales, notifications, auditLogs, dailyEdits, tasks, orders
 } from "@shared/schema";
 import { db } from "../db";
 import { eq, and, desc, sql } from "drizzle-orm";
@@ -61,6 +62,15 @@ export interface IStorage {
   createTask(task: InsertTask): Promise<Task>;
   updateTask(id: string, updates: Partial<Pick<Task, 'completed'>>): Promise<Task | undefined>;
   deleteTask(id: string): Promise<void>;
+
+  // Orders (Unauthenticated customer orders)
+  createOrder(order: InsertOrder, orderCode: string): Promise<Order>;
+  getOrderByCode(code: string): Promise<Order | undefined>;
+  getAllOrders(): Promise<Order[]>;
+  updateOrderItems(orderCode: string, items: any[]): Promise<Order | undefined>;
+  approveOrder(orderId: string, userId: string): Promise<Order | undefined>;
+  cancelOrder(orderId: string): Promise<Order | undefined>;
+  deleteOrder(orderId: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -290,6 +300,49 @@ export class DatabaseStorage implements IStorage {
 
   async deleteTask(id: string): Promise<void> {
     await db.delete(tasks).where(eq(tasks.id, id));
+  }
+
+  // ORDERS
+  async createOrder(order: InsertOrder, orderCode: string): Promise<Order> {
+    const [newOrder] = await db.insert(orders).values({ ...order, orderCode }).returning();
+    return newOrder;
+  }
+
+  async getOrderByCode(code: string): Promise<Order | undefined> {
+    const [order] = await db.select().from(orders).where(eq(orders.orderCode, code)).limit(1);
+    return order;
+  }
+
+  async getAllOrders(): Promise<Order[]> {
+    return await db.select().from(orders).orderBy(desc(orders.createdAt));
+  }
+
+  async updateOrderItems(orderCode: string, items: any[]): Promise<Order | undefined> {
+    const [updated] = await db.update(orders)
+      .set({ items, total: items.reduce((sum, item) => sum + (item.priceAtSale * item.quantity), 0).toString() })
+      .where(eq(orders.orderCode, orderCode))
+      .returning();
+    return updated;
+  }
+
+  async approveOrder(orderId: string, userId: string): Promise<Order | undefined> {
+    const [updated] = await db.update(orders)
+      .set({ status: 'approved', approvedBy: userId, approvedAt: new Date() })
+      .where(eq(orders.id, orderId))
+      .returning();
+    return updated;
+  }
+
+  async cancelOrder(orderId: string): Promise<Order | undefined> {
+    const [updated] = await db.update(orders)
+      .set({ status: 'cancelled' })
+      .where(eq(orders.id, orderId))
+      .returning();
+    return updated;
+  }
+
+  async deleteOrder(orderId: string): Promise<void> {
+    await db.delete(orders).where(eq(orders.id, orderId));
   }
 }
 

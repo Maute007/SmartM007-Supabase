@@ -126,3 +126,27 @@ export const tasks = pgTable("tasks", {
 export const insertTaskSchema = createInsertSchema(tasks).omit({ id: true, createdAt: true });
 export type InsertTask = z.infer<typeof insertTaskSchema>;
 export type Task = typeof tasks.$inferSelect;
+
+// ORDERS TABLE (Unauthenticated customer orders)
+export const orders = pgTable("orders", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orderCode: varchar("order_code", { length: 8 }).notNull().unique(), // Like "ABC12345"
+  customerName: text("customer_name").notNull(),
+  customerPhone: text("customer_phone").notNull(),
+  items: jsonb("items").notNull().$type<Array<{
+    productId: string;
+    quantity: number;
+    priceAtSale: number;
+  }>>(),
+  total: decimal("total", { precision: 10, scale: 2 }).notNull(),
+  status: text("status").notNull().$type<'pending' | 'approved' | 'cancelled'>().default('pending'),
+  paymentMethod: text("payment_method").notNull().$type<'cash' | 'transfer'>(),
+  paymentProof: text("payment_proof"), // URL to uploaded proof for transfers
+  approvedBy: varchar("approved_by").references(() => users.id), // UserId when approved
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  approvedAt: timestamp("approved_at"),
+});
+
+export const insertOrderSchema = createInsertSchema(orders).omit({ id: true, orderCode: true, status: true, approvedBy: true, createdAt: true, approvedAt: true });
+export type InsertOrder = z.infer<typeof insertOrderSchema>;
+export type Order = typeof orders.$inferSelect;
