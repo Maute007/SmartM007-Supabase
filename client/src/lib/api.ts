@@ -213,6 +213,20 @@ export const productsApi = {
       const error = await res.json();
       throw new Error(error.error || 'Erro ao deletar produto');
     }
+  },
+
+  increaseStock: async (id: string, quantity: number): Promise<Product> => {
+    const res = await fetch(`${API_BASE}/products/${id}/increase-stock`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ quantity }),
+      credentials: 'include'
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.error || 'Erro ao aumentar estoque');
+    }
+    return res.json();
   }
 };
 

@@ -352,6 +352,52 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Increase product stock (admin/manager only)
+  app.post("/api/products/:id/increase-stock", requireAuth, requireAdminOrManager, async (req: Request, res: Response) => {
+    try {
+      const { quantity } = req.body;
+      
+      if (!quantity || quantity <= 0) {
+        return res.status(400).json({ error: "Quantidade deve ser maior que 0" });
+      }
+
+      const product = await storage.getProduct(req.params.id);
+      if (!product) {
+        return res.status(404).json({ error: "Produto não encontrado" });
+      }
+
+      const newStock = parseFloat(product.stock) + parseFloat(String(quantity));
+      const updated = await storage.updateProduct(req.params.id, { stock: String(newStock) });
+
+      // Audit log
+      await storage.createAuditLog({
+        userId: req.session.userId!,
+        action: "INCREASE_STOCK",
+        entityType: "product",
+        entityId: updated!.id,
+        details: { 
+          productName: product.name,
+          quantityAdded: quantity,
+          previousStock: product.stock,
+          newStock: String(newStock)
+        }
+      });
+
+      // Notify all users
+      await storage.createNotification({
+        userId: null,
+        type: "info",
+        message: `Estoque aumentado: ${product.name} (+${quantity} ${product.unit})`,
+        metadata: { productId: product.id, action: "stock_increased" }
+      });
+
+      res.json(updated);
+    } catch (error) {
+      console.error("Increase stock error:", error);
+      res.status(500).json({ error: "Erro ao aumentar estoque" });
+    }
+  });
+
   app.delete("/api/products/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const product = await storage.getProduct(req.params.id);

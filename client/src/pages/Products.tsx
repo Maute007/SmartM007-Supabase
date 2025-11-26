@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Search, Plus, FileDown, FileUp, AlertTriangle, Pencil, Trash2, AlertCircle } from 'lucide-react';
+import { Search, Plus, FileDown, FileUp, AlertTriangle, Pencil, Trash2, AlertCircle, ArrowUp } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 import { Product, productsApi, categoriesApi, systemApi } from '@/lib/api';
 import * as XLSX from 'xlsx';
@@ -91,6 +91,28 @@ export default function Products() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/products'] });
       toast({ title: "Sucesso", description: "Produto deletado!" });
+    },
+    onError: (error: Error) => {
+      toast({ 
+        title: "Erro", 
+        description: error.message,
+        variant: "destructive"
+      });
+    }
+  });
+
+  const [increaseStockOpen, setIncreaseStockOpen] = useState(false);
+  const [selectedProductId, setSelectedProductId] = useState<string>('');
+  const [increaseQuantity, setIncreaseQuantity] = useState('');
+
+  const increaseStockMutation = useMutation({
+    mutationFn: ({ id, quantity }: { id: string; quantity: number }) => 
+      productsApi.increaseStock(id, quantity),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/products'] });
+      setIncreaseStockOpen(false);
+      setIncreaseQuantity('');
+      toast({ title: "Sucesso", description: "Estoque aumentado!" });
     },
     onError: (error: Error) => {
       toast({ 
@@ -523,7 +545,46 @@ export default function Products() {
                       </span>
                     </TableCell>
                     <TableCell className="uppercase">{product.unit}</TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-right flex gap-2 justify-end">
+                      <Dialog open={increaseStockOpen && selectedProductId === product.id} onOpenChange={(open) => { setIncreaseStockOpen(open); if (!open) setSelectedProductId(''); }}>
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          className="h-8 w-8"
+                          onClick={() => { setSelectedProductId(product.id); setIncreaseStockOpen(true); }}
+                          data-testid={`button-increase-stock-${product.id}`}
+                        >
+                          <ArrowUp className="h-4 w-4" />
+                        </Button>
+                        <DialogContent>
+                          <DialogHeader>
+                            <DialogTitle>Aumentar Estoque: {product.name}</DialogTitle>
+                          </DialogHeader>
+                          <div className="space-y-4 py-4">
+                            <div className="grid gap-2">
+                              <Label>Quantidade a Adicionar</Label>
+                              <Input 
+                                type="number" 
+                                placeholder="Ex: 10"
+                                value={increaseQuantity}
+                                onChange={(e) => setIncreaseQuantity(e.target.value)}
+                                data-testid="input-increase-quantity"
+                              />
+                              <p className="text-xs text-muted-foreground">
+                                Estoque atual: {parsedStock} {product.unit}
+                              </p>
+                            </div>
+                            <Button 
+                              onClick={() => increaseStockMutation.mutate({ id: product.id, quantity: parseFloat(increaseQuantity) })}
+                              disabled={increaseStockMutation.isPending || !increaseQuantity}
+                              className="w-full"
+                              data-testid="button-save-increase-stock"
+                            >
+                              {increaseStockMutation.isPending ? 'Aumentando...' : 'Aumentar Estoque'}
+                            </Button>
+                          </div>
+                        </DialogContent>
+                      </Dialog>
                       <Button 
                         variant="ghost" 
                         size="icon" 
