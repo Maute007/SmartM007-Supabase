@@ -501,6 +501,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ==================== ADMIN ROUTES (Sistema) ====================
   
+  // Verifica se banco está vazio (para setup initial)
+  app.get("/api/admin/check-empty", async (_req: Request, res: Response) => {
+    try {
+      const users = await storage.getAllUsers();
+      res.json({ isEmpty: users.length === 0 });
+    } catch (error) {
+      res.json({ isEmpty: false }); // Assume not empty on error
+    }
+  });
+  
   // Rota para forçar inicialização do banco (apenas em produção, sem autenticação para permitir setup inicial)
   app.post("/api/admin/force-seed", async (req: Request, res: Response) => {
     try {
