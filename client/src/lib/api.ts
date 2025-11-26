@@ -301,6 +301,14 @@ export const notificationsApi = {
       credentials: 'include'
     });
     if (!res.ok) throw new Error('Erro ao marcar notificação como lida');
+  },
+
+  delete: async (id: string): Promise<void> => {
+    const res = await fetch(`${API_BASE}/notifications/${id}`, {
+      method: 'DELETE',
+      credentials: 'include'
+    });
+    if (!res.ok) throw new Error('Erro ao deletar notificação');
   }
 };
 

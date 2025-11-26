@@ -42,6 +42,11 @@ export function Header({ onMenuClick }: HeaderProps) {
 
   const handleMarkRead = (id: string) => {
     markAsReadMutation.mutate(id);
+    setTimeout(() => {
+      notificationsApi.delete(id).then(() => {
+        queryClient.invalidateQueries({ queryKey: ['notifications'] });
+      }).catch(e => console.error("Delete notification error:", e));
+    }, 5000);
   };
 
   const getNotificationIcon = (type: string) => {
