@@ -190,7 +190,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ==================== CATEGORY ROUTES ====================
   
-  app.get("/api/categories", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/categories", async (req: Request, res: Response) => {
     try {
       const categories = await storage.getAllCategories();
       res.json(categories);
@@ -246,7 +246,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ==================== PRODUCT ROUTES ====================
   
-  app.get("/api/products", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/products", async (req: Request, res: Response) => {
     try {
       const products = await storage.getAllProducts();
       res.json(products);
@@ -636,6 +636,131 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Delete task error:", error);
       res.status(500).json({ error: "Erro ao deletar tarefa" });
+    }
+  });
+
+  // ==================== ORDERS ROUTES (Cliente - Pedidos) ====================
+
+  app.post("/api/orders", async (req: Request, res: Response) => {
+    try {
+      const { customerName, customerPhone, items, total, paymentMethod } = req.body;
+      
+      if (!customerName || !customerPhone || !items || !total) {
+        return res.status(400).json({ error: "Dados incompletos" });
+      }
+
+      const orderCode = Math.random().toString(36).substring(2, 10).toUpperCase();
+      const newOrder = await storage.createOrder({ 
+        customerName, 
+        customerPhone, 
+        items, 
+        total: total.toString(),
+        paymentMethod 
+      }, orderCode);
+
+      // Check for over-stock orders and notify
+      for (const item of items) {
+        const product = await storage.getProduct(item.productId);
+        if (product && item.quantity > parseFloat(product.stock)) {
+          await storage.createNotification({
+            userId: null,
+            type: "warning",
+            message: `⚠️ Pedido ${orderCode}: ${product.name} - Quantidade (${item.quantity}) acima do estoque (${product.stock})`,
+            metadata: { orderId: newOrder.id, productId: product.id, overstock: true }
+          });
+        }
+      }
+
+      // Notify all admins/managers about new order
+      await storage.createNotification({
+        userId: null,
+        type: "info",
+        message: `📦 Novo pedido: ${customerName} - Código: ${orderCode}`,
+        metadata: { orderId: newOrder.id, action: "new_order" }
+      });
+
+      res.json(newOrder);
+    } catch (error) {
+      console.error("Create order error:", error);
+      res.status(500).json({ error: "Erro ao criar pedido" });
+    }
+  });
+
+  app.get("/api/orders/:code", async (req: Request, res: Response) => {
+    try {
+      const order = await storage.getOrderByCode(req.params.code.toUpperCase());
+      if (!order) return res.status(404).json({ error: "Pedido não encontrado" });
+      res.json(order);
+    } catch (error) {
+      console.error("Get order error:", error);
+      res.status(500).json({ error: "Erro ao buscar pedido" });
+    }
+  });
+
+  app.get("/api/orders", requireAuth, async (req: Request, res: Response) => {
+    try {
+      if (req.session.role === 'seller') {
+        return res.status(403).json({ error: "Acesso negado" });
+      }
+      const orders = await storage.getAllOrders();
+      res.json(orders);
+    } catch (error) {
+      console.error("Get orders error:", error);
+      res.status(500).json({ error: "Erro ao buscar pedidos" });
+    }
+  });
+
+  app.patch("/api/orders/:id/approve", requireAuth, requireAdminOrManager, async (req: Request, res: Response) => {
+    try {
+      const updated = await storage.approveOrder(req.params.id, req.session.userId!);
+      if (!updated) return res.status(404).json({ error: "Pedido não encontrado" });
+      
+      await storage.createNotification({
+        userId: null,
+        type: "success",
+        message: `✅ Pedido ${updated.orderCode} foi aprovado!`,
+        metadata: { orderId: updated.id }
+      });
+
+      await storage.createAuditLog({
+        userId: req.session.userId!,
+        action: "APPROVE_ORDER",
+        entityType: "order",
+        entityId: updated.id,
+        details: { orderCode: updated.orderCode, total: updated.total }
+      });
+
+      res.json(updated);
+    } catch (error) {
+      console.error("Approve order error:", error);
+      res.status(500).json({ error: "Erro ao aprovar pedido" });
+    }
+  });
+
+  app.patch("/api/orders/:id/cancel", requireAuth, requireAdminOrManager, async (req: Request, res: Response) => {
+    try {
+      const updated = await storage.cancelOrder(req.params.id);
+      if (!updated) return res.status(404).json({ error: "Pedido não encontrado" });
+      
+      await storage.createNotification({
+        userId: null,
+        type: "error",
+        message: `❌ Pedido ${updated.orderCode} foi cancelado`,
+        metadata: { orderId: updated.id }
+      });
+
+      await storage.createAuditLog({
+        userId: req.session.userId!,
+        action: "CANCEL_ORDER",
+        entityType: "order",
+        entityId: updated.id,
+        details: { orderCode: updated.orderCode }
+      });
+
+      res.json(updated);
+    } catch (error) {
+      console.error("Cancel order error:", error);
+      res.status(500).json({ error: "Erro ao cancelar pedido" });
     }
   });
 

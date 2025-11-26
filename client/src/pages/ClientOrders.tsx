@@ -314,7 +314,7 @@ export default function ClientOrders() {
                       <div className="flex justify-between items-center">
                         <div className="text-2xl font-bold text-emerald-600">{formatCurrency(parseFloat(product.price))}</div>
                         <div className={`text-xs px-2 py-1 rounded ${parseFloat(product.stock) > 0 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                          {parseFloat(product.stock) > 0 ? `${product.stock} disponível` : 'Fora de estoque'}
+                          {parseFloat(product.stock) > 0 ? '✅ Disponível' : '❌ Indisponível'}
                         </div>
                       </div>
                       {mode === 'order' && (

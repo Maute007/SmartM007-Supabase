@@ -13,6 +13,7 @@ import Reports from "@/pages/Reports";
 import Tasks from "@/pages/Tasks";
 import SettingsPage from "@/pages/Settings";
 import ClientOrders from "@/pages/ClientOrders";
+import Orders from "@/pages/Orders";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { AuthProvider } from "@/lib/auth";
 import { CartProvider } from "@/lib/cart";
@@ -42,6 +43,9 @@ function Router() {
       </Route>
       <Route path="/settings">
         <MainLayout><SettingsPage /></MainLayout>
+      </Route>
+      <Route path="/orders">
+        <MainLayout><Orders /></MainLayout>
       </Route>
       
       <Route component={NotFound} />
