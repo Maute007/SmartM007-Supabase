@@ -703,7 +703,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ error: "Acesso negado" });
       }
       const orders = await storage.getAllOrders();
-      res.json(orders);
+      
+      // Enrich orders with product names and stock info
+      const enrichedOrders = await Promise.all(orders.map(async (order: any) => {
+        const enrichedItems = await Promise.all(order.items.map(async (item: any) => {
+          const product = await storage.getProduct(item.productId);
+          return {
+            ...item,
+            productName: product?.name || 'Produto desconhecido',
+            currentStock: product?.stock || '0',
+            hasInsufficientStock: product ? item.quantity > parseFloat(product.stock) : true
+          };
+        }));
+        return {
+          ...order,
+          items: enrichedItems,
+          hasAnyInsufficientStock: enrichedItems.some(item => item.hasInsufficientStock)
+        };
+      }));
+      
+      res.json(enrichedOrders);
     } catch (error) {
       console.error("Get orders error:", error);
       res.status(500).json({ error: "Erro ao buscar pedidos" });
@@ -712,8 +731,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/orders/:id/approve", requireAuth, requireAdminOrManager, async (req: Request, res: Response) => {
     try {
+      const order = await storage.getAllOrders().then(orders => orders.find(o => o.id === req.params.id));
+      if (!order) return res.status(404).json({ error: "Pedido não encontrado" });
+      
+      // Validate stock for all items
+      const insufficientItems = [];
+      for (const item of order.items) {
+        const product = await storage.getProduct(item.productId);
+        if (!product || item.quantity > parseFloat(product.stock)) {
+          insufficientItems.push({
+            productId: item.productId,
+            productName: product?.name || 'Produto desconhecido',
+            requested: item.quantity,
+            available: product?.stock || '0'
+          });
+        }
+      }
+      
+      // Se há itens com estoque insuficiente, recusar aprovação
+      if (insufficientItems.length > 0) {
+        return res.status(400).json({ 
+          error: "Não é possível aprovar pedido com estoque insuficiente",
+          insufficientItems 
+        });
+      }
+
       const updated = await storage.approveOrder(req.params.id, req.session.userId!);
-      if (!updated) return res.status(404).json({ error: "Pedido não encontrado" });
       
       await storage.createNotification({
         userId: null,
