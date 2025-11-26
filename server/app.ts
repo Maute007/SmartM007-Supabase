@@ -37,6 +37,9 @@ app.use((req, res, next) => {
   next();
 });
 
+// Middleware para confiar em proxies (Replit deployment)
+app.set('trust proxy', 1);
+
 app.use(express.json({
   verify: (req, _res, buf) => {
     req.rawBody = buf;
@@ -48,10 +51,12 @@ app.use(
   session({
     secret: process.env.SESSION_SECRET || 'fresh-market-secret-key-2025',
     resave: false,
-    saveUninitialized: false,
+    saveUninitialized: true,
     cookie: {
-      secure: process.env.NODE_ENV === 'production',
+      // Em produção (Replit), confia em X-Forwarded-Proto header para HTTPS
+      secure: process.env.NODE_ENV === 'production' ? 'auto' : false,
       httpOnly: true,
+      sameSite: 'lax',
       maxAge: 1000 * 60 * 60 * 24 * 7 // 7 days
     }
   })

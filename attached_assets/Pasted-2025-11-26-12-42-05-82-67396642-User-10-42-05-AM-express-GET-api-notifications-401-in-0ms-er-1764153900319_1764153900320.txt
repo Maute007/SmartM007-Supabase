@@ -1,0 +1,125 @@
+2025-11-26 12:42:05.82
+67396642
+User
+10:42:05 AM [express] GET /api/notifications 401 in 0ms :: {"error":"Não autenticado"}
+
+2025-11-26 12:42:15.26
+67396642
+User
+10:42:15 AM [express] GET /api/auth/me 401 in 1ms :: {"error":"Não autenticado"}
+2025-11-26 12:42:15.58
+67396642
+User
+10:42:15 AM [express] GET /api/auth/me 401 in 0ms :: {"error":"Não autenticado"}
+2025-11-26 12:42:16.43
+67396642
+User
+10:42:16 AM [express] GET /api/admin/check-empty 200 in 547ms :: {"isEmpty":false}
+2025-11-26 12:42:27.92
+67396642
+User
+10:42:27 AM [express] POST /api/auth/login 401 in 255ms :: {"error":"Usuário ou senha incorretos"}
+2025-11-26 12:42:41.61
+67396642
+User
+10:42:41 AM [express] POST /api/auth/login 200 in 232ms :: {"id":"2cdced44-c20b-41c2-a101-3ae7f6b00a9…
+2025-11-26 12:42:42.03
+67396642
+User
+10:42:42 AM [express] GET /api/sales 401 in 1ms :: {"error":"Não autenticado"}
+2025-11-26 12:42:42.03
+67396642
+User
+10:42:42 AM [express] GET /api/notifications 401 in 0ms :: {"error":"Não autenticado"}
+2025-11-26 12:42:42.03
+67396642
+User
+10:42:42 AM [express] GET /api/products 401 in 0ms :: {"error":"Não autenticado"}
+2025-11-26 12:42:42.04
+67396642
+User
+10:42:42 AM [express] GET /api/notifications 401 in 1ms :: {"error":"Não autenticado"}
+2025-11-26 12:42:42.04
+67396642
+User
+10:42:42 AM [express] GET /api/users 401 in 1ms :: {"error":"Não autenticado"}
+2025-11-26 12:42:47.52
+67396642
+User
+10:42:47 AM [express] GET /api/audit-logs 401 in 0ms :: {"error":"Não autenticado"}
+2025-11-26 12:42:47.52
+67396642
+User
+10:42:47 AM [express] GET /api/sales 401 in 0ms :: {"error":"Não autenticado"}
+2025-11-26 12:42:47.52
+67396642
+User
+10:42:47 AM [express] GET /api/products 401 in 0ms :: {"error":"Não autenticado"}
+2025-11-26 12:42:47.52
+67396642
+User
+10:42:47 AM [express] GET /api/users 401 in 0ms :: {"error":"Não autenticado"}
+2025-11-26 12:42:52.44
+67396642
+User
+10:42:52 AM [express] GET /api/notifications 401 in 1ms :: {"error":"Não autenticado"}
+2025-11-26 12:43:02.89
+67396642
+User
+10:43:02 AM [express] GET /api/notifications 401 in 3ms :: {"error":"Não autenticado"}
+2025-11-26 12:43:13.33
+67396642
+User
+10:43:13 AM [express] GET /api/notifications 401 in 1ms :: {"error":"Não autenticado"}
+2025-11-26 12:43:14.56
+67396642
+User
+10:43:14 AM [express] POST /api/users 401 in 0ms :: {"error":"Não autenticado"}
+2025-11-26 12:43:23.47
+67396642
+User
+10:43:23 AM [express] POST /api/users 401 in 1ms :: {"error":"Não autenticado"}
+2025-11-26 12:43:23.78
+67396642
+User
+10:43:23 AM [express] GET /api/notifications 401 in 1ms :: {"error":"Não autenticado"}
+2025-11-26 12:43:34.22
+67396642
+User
+10:43:34 AM [express] GET /api/notifications 401 in 1ms :: {"error":"Não autenticado"}
+2025-11-26 12:43:37.31
+67396642
+User
+10:43:37 AM [express] GET /api/products 401 in 0ms :: {"error":"Não autenticado"}
+2025-11-26 12:43:37.32
+67396642
+User
+10:43:37 AM [express] GET /api/system/edit-count 401 in 1ms :: {"error":"Não autenticado"}
+2025-11-26 12:43:37.33
+67396642
+User
+10:43:37 AM [express] GET /api/categories 401 in 0ms :: {"error":"Não autenticado"}
+2025-11-26 12:43:44.67
+67396642
+User
+10:43:44 AM [express] GET /api/notifications 401 in 1ms :: {"error":"Não autenticado"}
+2025-11-26 12:43:55.11
+67396642
+User
+10:43:55 AM [express] GET /api/notifications 401 in 1ms :: {"error":"Não autenticado"}
+2025-11-26 12:44:05.57
+67396642
+User
+10:44:05 AM [express] GET /api/notifications 401 in 0ms :: {"error":"Não autenticado"}
+2025-11-26 12:44:16.03
+67396642
+User
+10:44:16 AM [express] GET /api/notifications 401 in 1ms :: {"error":"Não autenticado"}
+2025-11-26 12:44:20.30
+67396642
+User
+10:44:20 AM [express] POST /api/categories 401 in 0ms :: {"error":"Não autenticado"}
+2025-11-26 12:44:20.30
+67396642
+User
+10:44:20 AM [express] POST /api/categories 401 in 0ms :: {"error":"Não autenticado"}
