@@ -69,7 +69,7 @@ export default function Login() {
           </div>
           <div>
             <CardTitle className="text-3xl font-heading font-bold bg-gradient-to-r from-emerald-600 to-orange-500 bg-clip-text text-transparent">
-              Fresh Market
+              M007System
             </CardTitle>
             <CardDescription className="text-lg">Sistema de Vendas Inteligente</CardDescription>
           </div>
@@ -142,7 +142,7 @@ export default function Login() {
             </Button>
 
             <div className="text-center text-xs text-muted-foreground pt-6">
-              &copy; 2025 Fresh Market Sistema Inteligente
+              &copy; 2025 M007System - Sistema Inteligente de Vendas
             </div>
           </form>
         </CardContent>

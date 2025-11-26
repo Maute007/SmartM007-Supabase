@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { ShoppingCart, Package, Phone, User, Plus, Minus, Check, Clock, X, Store, ArrowLeft } from 'lucide-react';
+import { ShoppingCart, Package, Phone, User, Plus, Minus, Check, Clock, X, Store } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import { useQuery, useMutation } from '@tanstack/react-query';
@@ -173,20 +173,14 @@ export default function ClientOrders() {
     <div className="min-h-screen bg-gradient-to-br from-emerald-500/10 via-orange-500/5 to-emerald-500/10 p-4">
       <div className="max-w-6xl mx-auto space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="h-12 w-12 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-xl flex items-center justify-center">
-              <Store className="h-6 w-6 text-white" />
-            </div>
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900">Fresh Market</h1>
-              <p className="text-sm text-muted-foreground">Faça seu pedido online</p>
-            </div>
+        <div className="flex items-center gap-3">
+          <div className="h-12 w-12 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-xl flex items-center justify-center">
+            <Store className="h-6 w-6 text-white" />
           </div>
-          <Button variant="outline" onClick={() => setLocation('/login')} className="gap-2">
-            <ArrowLeft className="h-4 w-4" />
-            Voltar ao Login
-          </Button>
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">M007System</h1>
+            <p className="text-sm text-muted-foreground">Faça seu pedido online</p>
+          </div>
         </div>
 
         {step === 'browse' && (
@@ -443,21 +437,12 @@ export default function ClientOrders() {
                   </p>
                 </div>
 
-                <div className="flex gap-3">
-                  <Button
-                    variant="outline"
-                    onClick={() => { setStep('browse'); setOrder(null); }}
-                    className="flex-1"
-                  >
-                    Fazer Novo Pedido
-                  </Button>
-                  <Button
-                    onClick={() => setLocation('/login')}
-                    className="flex-1 bg-emerald-500 hover:bg-emerald-600"
-                  >
-                    Ir para Login
-                  </Button>
-                </div>
+                <Button
+                  onClick={() => { setStep('browse'); setOrder(null); }}
+                  className="w-full bg-emerald-500 hover:bg-emerald-600"
+                >
+                  Fazer Novo Pedido
+                </Button>
               </CardContent>
             </Card>
           </div>

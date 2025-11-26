@@ -59,6 +59,8 @@ export default function POS() {
   const [weightOpen, setWeightOpen] = useState(false);
   const [selectedWeightProduct, setSelectedWeightProduct] = useState<Product | null>(null);
   const [weightInGrams, setWeightInGrams] = useState(0);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<'cash' | 'card' | 'pix' | 'mpesa' | 'emola' | 'pos' | 'bank' | null>(null);
   
   const [discountValue, setDiscountValue] = useState(0);
   const [discountType, setDiscountType] = useState<'percentage' | 'fixed'>('percentage');
@@ -171,19 +173,27 @@ export default function POS() {
 
   const handleCheckout = (method: 'cash' | 'card' | 'pix' | 'mpesa' | 'emola' | 'pos' | 'bank') => {
     if (cart.length === 0 || !user) return;
+    setSelectedPaymentMethod(method);
+    setConfirmOpen(true);
+  };
+
+  const confirmSale = () => {
+    if (cart.length === 0 || !user || !selectedPaymentMethod) return;
 
     createSaleMutation.mutate({
       userId: user.id,
       total: cartTotal.toString(),
       amountReceived: amountReceived > 0 ? amountReceived.toString() : undefined,
       change: change > 0 ? change.toString() : undefined,
-      paymentMethod: method,
+      paymentMethod: selectedPaymentMethod,
       items: cart.map(item => ({
         productId: item.productId,
         quantity: item.quantity,
         priceAtSale: item.priceAtSale
       }))
     });
+    setConfirmOpen(false);
+    setSelectedPaymentMethod(null);
   };
 
   if (productsLoading || categoriesLoading) {
