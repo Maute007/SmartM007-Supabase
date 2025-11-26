@@ -47,6 +47,7 @@ export interface IStorage {
   getNotificationsByUser(userId: string | null): Promise<Notification[]>;
   createNotification(notification: InsertNotification): Promise<Notification>;
   markNotificationAsRead(id: string): Promise<void>;
+  deleteNotification(id: string): Promise<void>;
 
   // Audit Logs
   getAllAuditLogs(): Promise<AuditLog[]>;
@@ -224,6 +225,10 @@ export class DatabaseStorage implements IStorage {
     await db.update(notifications)
       .set({ read: true })
       .where(eq(notifications.id, id));
+  }
+
+  async deleteNotification(id: string): Promise<void> {
+    await db.delete(notifications).where(eq(notifications.id, id));
   }
 
   // AUDIT LOGS

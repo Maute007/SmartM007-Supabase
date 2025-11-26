@@ -509,6 +509,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.patch("/api/notifications/:id/read", requireAuth, async (req: Request, res: Response) => {
     try {
       await storage.markNotificationAsRead(req.params.id);
+      // Auto-delete after 2 minutes
+      setTimeout(async () => {
+        await storage.deleteNotification(req.params.id).catch(e => console.error("Auto-delete notification error:", e));
+      }, 2 * 60 * 1000);
       res.json({ success: true });
     } catch (error) {
       console.error("Mark notification error:", error);
@@ -525,6 +529,50 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Get audit logs error:", error);
       res.status(500).json({ error: "Erro ao buscar logs de auditoria" });
+    }
+  });
+
+  app.post("/api/audit-logs/filter", requireAuth, requireAdminOrManager, async (req: Request, res: Response) => {
+    try {
+      const { userId, startDate, endDate, startHour, endHour } = req.body;
+      
+      if (!userId || !startDate || !endDate) {
+        return res.status(400).json({ error: "userId, startDate e endDate são obrigatórios" });
+      }
+
+      const logs = await storage.getAuditLogsByUserAndDateRange(
+        userId,
+        startDate,
+        endDate,
+        startHour,
+        endHour
+      );
+
+      // Convert to CSV if requested
+      if (req.query.format === 'csv') {
+        const headers = ['ID', 'Ação', 'Tipo', 'ID Entidade', 'Detalhes', 'Data/Hora'];
+        const rows = logs.map(log => [
+          log.id,
+          log.action,
+          log.entityType,
+          log.entityId || '-',
+          JSON.stringify(log.details || {}),
+          new Date(log.createdAt).toLocaleString('pt-BR')
+        ]);
+        
+        const csv = [headers, ...rows]
+          .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+          .join('\n');
+        
+        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+        res.setHeader('Content-Disposition', `attachment; filename="auditoria_${startDate}_${endDate}.csv"`);
+        res.send(csv);
+      } else {
+        res.json(logs);
+      }
+    } catch (error) {
+      console.error("Filter audit logs error:", error);
+      res.status(500).json({ error: "Erro ao filtrar logs de auditoria" });
     }
   });
 
