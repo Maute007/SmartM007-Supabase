@@ -140,6 +140,31 @@ export const usersApi = {
       throw new Error(error.error || 'Erro ao criar usuário');
     }
     return res.json();
+  },
+
+  update: async (id: string, data: Partial<Omit<User, 'id'> & { password?: string }>): Promise<User> => {
+    const res = await fetch(`${API_BASE}/users/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+      credentials: 'include'
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.error || 'Erro ao atualizar usuário');
+    }
+    return res.json();
+  },
+
+  delete: async (id: string): Promise<void> => {
+    const res = await fetch(`${API_BASE}/users/${id}`, {
+      method: 'DELETE',
+      credentials: 'include'
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.error || 'Erro ao deletar usuário');
+    }
   }
 };
 

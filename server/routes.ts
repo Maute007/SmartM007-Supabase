@@ -115,6 +115,54 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Update user (admin only)
+  app.patch("/api/users/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const updated = await storage.updateUser(req.params.id, req.body);
+      if (!updated) {
+        return res.status(404).json({ error: "Usuário não encontrado" });
+      }
+
+      await storage.createAuditLog({
+        userId: req.session.userId!,
+        action: "UPDATE_USER",
+        entityType: "user",
+        entityId: updated.id,
+        details: { changes: req.body }
+      });
+
+      res.json(updated);
+    } catch (error) {
+      console.error("Update user error:", error);
+      res.status(500).json({ error: "Erro ao atualizar usuário" });
+    }
+  });
+
+  // Delete user (admin only)
+  app.delete("/api/users/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const userToDelete = await storage.getUser(req.params.id);
+      if (!userToDelete) {
+        return res.status(404).json({ error: "Usuário não encontrado" });
+      }
+
+      await storage.deleteUser(req.params.id);
+
+      await storage.createAuditLog({
+        userId: req.session.userId!,
+        action: "DELETE_USER",
+        entityType: "user",
+        entityId: req.params.id,
+        details: { username: userToDelete.username }
+      });
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Delete user error:", error);
+      res.status(500).json({ error: "Erro ao deletar usuário" });
+    }
+  });
+
   // Create user (admin only)
   app.post("/api/users", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
@@ -469,6 +517,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
         createdBy: req.session.userId!
       };
       const newTask = await storage.createTask(taskData);
+      
+      // Criar notificação para usuários afetados
+      const assignees = new Set<string>();
+      if (taskData.assignedTo === 'admin') {
+        const allUsers = await storage.getAllUsers();
+        allUsers.filter(u => u.role === 'admin').forEach(u => assignees.add(u.id));
+      } else if (taskData.assignedTo === 'manager') {
+        const allUsers = await storage.getAllUsers();
+        allUsers.filter(u => u.role === 'manager').forEach(u => assignees.add(u.id));
+      } else if (taskData.assignedTo === 'seller') {
+        const allUsers = await storage.getAllUsers();
+        allUsers.filter(u => u.role === 'seller').forEach(u => assignees.add(u.id));
+      } else if (taskData.assignedTo === 'user' && taskData.assignedToId) {
+        assignees.add(taskData.assignedToId);
+      } else if (taskData.assignedTo === 'all') {
+        const allUsers = await storage.getAllUsers();
+        allUsers.forEach(u => assignees.add(u.id));
+      }
+      
+      // Broadcast notification to assigned users
+      for (const userId of assignees) {
+        await storage.createNotification({
+          userId,
+          type: "info",
+          message: `Nova tarefa atribuída: ${newTask.title}`,
+          metadata: { taskId: newTask.id }
+        });
+      }
+      
       res.json(newTask);
     } catch (error) {
       console.error("Create task error:", error);
@@ -482,6 +559,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!updated) {
         return res.status(404).json({ error: "Tarefa não encontrada" });
       }
+      
+      // Notificar quando tarefa é completada
+      if (updated.completed) {
+        await storage.createNotification({
+          userId: null,
+          type: "success",
+          message: `Tarefa concluída: ${updated.title}`,
+          metadata: { taskId: updated.id }
+        });
+      }
+      
       res.json(updated);
     } catch (error) {
       console.error("Update task error:", error);
