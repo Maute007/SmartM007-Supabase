@@ -509,14 +509,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.patch("/api/notifications/:id/read", requireAuth, async (req: Request, res: Response) => {
     try {
       await storage.markNotificationAsRead(req.params.id);
-      // Auto-delete after 2 minutes
-      setTimeout(async () => {
-        await storage.deleteNotification(req.params.id).catch(e => console.error("Auto-delete notification error:", e));
-      }, 2 * 60 * 1000);
       res.json({ success: true });
     } catch (error) {
       console.error("Mark notification error:", error);
       res.status(500).json({ error: "Erro ao marcar notificação" });
+    }
+  });
+
+  app.delete("/api/notifications/:id", requireAuth, async (req: Request, res: Response) => {
+    try {
+      await storage.deleteNotification(req.params.id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Delete notification error:", error);
+      res.status(500).json({ error: "Erro ao deletar notificação" });
     }
   });
 
