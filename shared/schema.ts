@@ -150,3 +150,16 @@ export const orders = pgTable("orders", {
 export const insertOrderSchema = createInsertSchema(orders).omit({ id: true, orderCode: true, status: true, approvedBy: true, createdAt: true, approvedAt: true });
 export type InsertOrder = z.infer<typeof insertOrderSchema>;
 export type Order = typeof orders.$inferSelect;
+
+// ORDER REOPENS TRACKING (para rastrear reabertas de pedidos aprovados - máximo 5/dia para não-admin)
+export const orderReopens = pgTable("order_reopens", {
+  id: serial("id").primaryKey(),
+  orderId: varchar("order_id").notNull().references(() => orders.id),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  date: text("date").notNull(), // Format: YYYY-MM-DD
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertOrderReopenSchema = createInsertSchema(orderReopens).omit({ id: true, createdAt: true });
+export type InsertOrderReopen = z.infer<typeof insertOrderReopenSchema>;
+export type OrderReopen = typeof orderReopens.$inferSelect;

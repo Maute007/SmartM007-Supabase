@@ -8,7 +8,8 @@ import {
   type DailyEdit, type InsertDailyEdit,
   type Task, type InsertTask,
   type Order, type InsertOrder,
-  users, products, categories, sales, notifications, auditLogs, dailyEdits, tasks, orders
+  type OrderReopen, type InsertOrderReopen,
+  users, products, categories, sales, notifications, auditLogs, dailyEdits, tasks, orders, orderReopens
 } from "@shared/schema";
 import { db } from "../db";
 import { eq, and, desc, sql } from "drizzle-orm";
@@ -71,6 +72,9 @@ export interface IStorage {
   approveOrder(orderId: string, userId: string): Promise<Order | undefined>;
   cancelOrder(orderId: string): Promise<Order | undefined>;
   deleteOrder(orderId: string): Promise<void>;
+  reopenOrder(orderId: string): Promise<Order | undefined>;
+  getReopensToday(userId: string, date: string): Promise<number>;
+  trackReopen(reopen: InsertOrderReopen): Promise<OrderReopen>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -343,6 +347,26 @@ export class DatabaseStorage implements IStorage {
 
   async deleteOrder(orderId: string): Promise<void> {
     await db.delete(orders).where(eq(orders.id, orderId));
+  }
+
+  async reopenOrder(orderId: string): Promise<Order | undefined> {
+    const [updated] = await db.update(orders)
+      .set({ status: 'pending' })
+      .where(eq(orders.id, orderId))
+      .returning();
+    return updated;
+  }
+
+  async getReopensToday(userId: string, date: string): Promise<number> {
+    const result = await db.select({ count: sql<number>`count(*)` })
+      .from(orderReopens)
+      .where(and(eq(orderReopens.userId, userId), eq(orderReopens.date, date)));
+    return result[0]?.count || 0;
+  }
+
+  async trackReopen(reopen: InsertOrderReopen): Promise<OrderReopen> {
+    const [newReopen] = await db.insert(orderReopens).values(reopen).returning();
+    return newReopen;
   }
 }
 
