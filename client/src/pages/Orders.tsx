@@ -240,12 +240,26 @@ export default function Orders() {
           {approvedOrders.length === 0 ? (
             <p className="text-muted-foreground">Nenhum pedido aprovado</p>
           ) : (
-            <div className="space-y-2">
+            <div className="space-y-3">
               {approvedOrders.map((order: Order) => (
-                <div key={order.id} className="p-3 bg-green-50 rounded-lg border border-green-200 text-sm">
-                  <div className="flex justify-between">
-                    <span className="font-semibold">{order.orderCode} - {order.customerName}</span>
-                    <span className="font-bold text-green-600">{formatCurrency(parseFloat(order.total))}</span>
+                <div key={order.id} className="p-3 bg-green-50 rounded-lg border border-green-200">
+                  <div className="flex justify-between items-start gap-3">
+                    <div className="flex-1">
+                      <span className="font-semibold text-sm">{order.orderCode} - {order.customerName}</span>
+                    </div>
+                    <div className="flex gap-2 items-center">
+                      <span className="font-bold text-green-600">{formatCurrency(parseFloat(order.total))}</span>
+                      <Button
+                        onClick={() => reopenMutation.mutate(order.id)}
+                        disabled={reopenMutation.isPending}
+                        variant="outline"
+                        size="sm"
+                        className="gap-1"
+                      >
+                        <RotateCcw className="h-3 w-3" />
+                        Reabrir
+                      </Button>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -266,12 +280,26 @@ export default function Orders() {
           {cancelledOrders.length === 0 ? (
             <p className="text-muted-foreground">Nenhum pedido cancelado</p>
           ) : (
-            <div className="space-y-2">
+            <div className="space-y-3">
               {cancelledOrders.map((order: Order) => (
-                <div key={order.id} className="p-3 bg-gray-50 rounded-lg border border-gray-200 text-sm">
-                  <div className="flex justify-between">
-                    <span className="font-semibold text-gray-600">{order.orderCode} - {order.customerName}</span>
-                    <span className="text-gray-500">{formatCurrency(parseFloat(order.total))}</span>
+                <div key={order.id} className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+                  <div className="flex justify-between items-start gap-3">
+                    <div className="flex-1">
+                      <span className="font-semibold text-gray-600 text-sm">{order.orderCode} - {order.customerName}</span>
+                    </div>
+                    <div className="flex gap-2 items-center">
+                      <span className="text-gray-500">{formatCurrency(parseFloat(order.total))}</span>
+                      <Button
+                        onClick={() => reopenMutation.mutate(order.id)}
+                        disabled={reopenMutation.isPending}
+                        variant="outline"
+                        size="sm"
+                        className="gap-1"
+                      >
+                        <RotateCcw className="h-3 w-3" />
+                        Reabrir
+                      </Button>
+                    </div>
                   </div>
                 </div>
               ))}
