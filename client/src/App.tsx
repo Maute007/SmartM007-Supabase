@@ -12,6 +12,7 @@ import Products from "@/pages/Products";
 import Reports from "@/pages/Reports";
 import Tasks from "@/pages/Tasks";
 import SettingsPage from "@/pages/Settings";
+import ClientOrders from "@/pages/ClientOrders";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { AuthProvider } from "@/lib/auth";
 import { CartProvider } from "@/lib/cart";
@@ -21,6 +22,7 @@ function Router() {
     <Switch>
       <Route path="/setup" component={Setup} />
       <Route path="/login" component={Login} />
+      <Route path="/pedidos" component={ClientOrders} />
       
       {/* Protected Routes wrapped in MainLayout */}
       <Route path="/">

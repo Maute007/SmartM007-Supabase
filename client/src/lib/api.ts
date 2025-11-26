@@ -322,6 +322,71 @@ export const systemApi = {
   }
 };
 
+// Orders API
+export interface Order {
+  id: string;
+  orderCode: string;
+  customerName: string;
+  customerPhone: string;
+  items: Array<{
+    productId: string;
+    quantity: number;
+    priceAtSale: number;
+  }>;
+  total: string;
+  status: 'pending' | 'approved' | 'cancelled';
+  paymentMethod: 'cash' | 'transfer';
+  paymentProof?: string;
+  approvedBy?: string;
+  createdAt: Date;
+  approvedAt?: Date;
+}
+
+export const ordersApi = {
+  create: async (data: Partial<Order>): Promise<Order> => {
+    const res = await fetch(`${API_BASE}/orders`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.error || 'Erro ao criar pedido');
+    }
+    return res.json();
+  },
+
+  getByCode: async (code: string): Promise<Order> => {
+    const res = await fetch(`${API_BASE}/orders/${code}`);
+    if (!res.ok) throw new Error('Pedido não encontrado');
+    return res.json();
+  },
+
+  getAll: async (): Promise<Order[]> => {
+    const res = await fetch(`${API_BASE}/orders`, { credentials: 'include' });
+    if (!res.ok) throw new Error('Erro ao buscar pedidos');
+    return res.json();
+  },
+
+  approve: async (id: string): Promise<Order> => {
+    const res = await fetch(`${API_BASE}/orders/${id}/approve`, {
+      method: 'PATCH',
+      credentials: 'include'
+    });
+    if (!res.ok) throw new Error('Erro ao aprovar pedido');
+    return res.json();
+  },
+
+  cancel: async (id: string): Promise<Order> => {
+    const res = await fetch(`${API_BASE}/orders/${id}/cancel`, {
+      method: 'PATCH',
+      credentials: 'include'
+    });
+    if (!res.ok) throw new Error('Erro ao cancelar pedido');
+    return res.json();
+  }
+};
+
 // Tasks API
 export const tasksApi = {
   getAll: async (): Promise<Task[]> => {

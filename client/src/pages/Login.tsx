@@ -123,6 +123,24 @@ export default function Login() {
               {isSubmitting ? 'Entrando...' : 'Entrar no Sistema'}
             </Button>
 
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-gray-200"></div>
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-white px-2 text-muted-foreground">ou</span>
+              </div>
+            </div>
+
+            <Button
+              type="button"
+              onClick={() => setLocation('/pedidos')}
+              variant="outline"
+              className="w-full h-12 text-base font-medium border-2 border-orange-300 text-orange-600 hover:bg-orange-50"
+            >
+              🛒 Fazer Pedido Online (Clientes)
+            </Button>
+
             <div className="text-center text-xs text-muted-foreground pt-6">
               &copy; 2025 Fresh Market Sistema Inteligente
             </div>
