@@ -515,6 +515,131 @@ export default function Products() {
         </Alert>
       )}
 
+      {/* Modal de Edição de Produtos */}
+      <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Editar Produto</DialogTitle>
+          </DialogHeader>
+          {editingProduct && (
+            <div className="grid gap-4 py-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label>Nome do Produto</Label>
+                  <Input 
+                    value={editingProduct.name} 
+                    onChange={e => setEditingProduct({...editingProduct, name: e.target.value})}
+                    data-testid="input-edit-product-name"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label>Código (SKU)</Label>
+                  <Input 
+                    value={editingProduct.sku} 
+                    onChange={e => setEditingProduct({...editingProduct, sku: e.target.value})}
+                    data-testid="input-edit-product-sku"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-4">
+                <div className="grid gap-2">
+                  <Label>Preço Venda (MT)</Label>
+                  <Input 
+                    type="number" 
+                    value={editingProduct.price} 
+                    onChange={e => setEditingProduct({...editingProduct, price: e.target.value})}
+                    data-testid="input-edit-product-price"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label>Preço Custo (MT)</Label>
+                  <Input 
+                    type="number" 
+                    value={editingProduct.costPrice} 
+                    onChange={e => setEditingProduct({...editingProduct, costPrice: e.target.value})}
+                    data-testid="input-edit-product-cost"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label>Estoque</Label>
+                  <Input 
+                    type="number" 
+                    value={editingProduct.stock} 
+                    onChange={e => setEditingProduct({...editingProduct, stock: e.target.value})}
+                    data-testid="input-edit-product-stock"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label>Estoque Mínimo</Label>
+                  <Input 
+                    type="number" 
+                    value={editingProduct.minStock} 
+                    onChange={e => setEditingProduct({...editingProduct, minStock: e.target.value})}
+                    data-testid="input-edit-product-minstock"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label>Unidade</Label>
+                  <Select value={editingProduct.unit} onValueChange={(val) => setEditingProduct({...editingProduct, unit: val as any})}>
+                    <SelectTrigger data-testid="select-edit-product-unit">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="un">Un (Unidade)</SelectItem>
+                      <SelectItem value="kg">Kg (Quilograma)</SelectItem>
+                      <SelectItem value="g">g (Grama)</SelectItem>
+                      <SelectItem value="pack">Pack</SelectItem>
+                      <SelectItem value="box">Box</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="grid gap-2">
+                <Label>Categoria</Label>
+                <Select 
+                  value={editingProduct.categoryId || ''} 
+                  onValueChange={(val) => setEditingProduct({...editingProduct, categoryId: val})}
+                >
+                  <SelectTrigger data-testid="select-edit-product-category">
+                    <SelectValue placeholder="Selecione categoria" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {categories.map(cat => (
+                      <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="grid gap-2">
+                <Label>URL da Imagem (Opcional)</Label>
+                <Input 
+                  value={editingProduct.image || ''} 
+                  onChange={e => setEditingProduct({...editingProduct, image: e.target.value})}
+                  placeholder="https://exemplo.com/imagem.jpg"
+                  data-testid="input-edit-product-image"
+                />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsEditOpen(false)}>Cancelar</Button>
+            <Button 
+              onClick={handleSaveEdit}
+              disabled={updateProductMutation.isPending}
+              data-testid="button-save-edit-product"
+            >
+              {updateProductMutation.isPending ? 'Salvando...' : 'Salvar Alterações'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Card className="border-primary/10">
         <CardHeader className="pb-2">
           <div className="relative max-w-sm">
@@ -591,6 +716,15 @@ export default function Products() {
                     </TableCell>
                     <TableCell className="uppercase">{product.unit}</TableCell>
                     <TableCell className="text-right flex gap-2 justify-end">
+                      <Button 
+                        variant="ghost" 
+                        size="icon" 
+                        className="h-8 w-8"
+                        onClick={() => handleEditProduct(product)}
+                        data-testid={`button-edit-${product.id}`}
+                      >
+                        <Pencil className="h-4 w-4 text-amber-600" />
+                      </Button>
                       <Dialog open={increaseStockOpen && selectedProductId === product.id} onOpenChange={(open) => { setIncreaseStockOpen(open); if (!open) setSelectedProductId(''); }}>
                         <Button 
                           variant="ghost" 
