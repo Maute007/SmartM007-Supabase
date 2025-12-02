@@ -152,23 +152,25 @@ export default function Dashboard() {
             { title: 'Equipe Ativa', value: activeUsers, icon: Users, bg: 'orange', trend: 'Online', test: 'text-active-users' }
           ].map((card, idx) => {
             const Icon = card.icon;
-            const bgColor = card.bg === 'green' ? 'from-green-50 to-green-100' : card.bg === 'blue' ? 'from-blue-50 to-blue-100' : card.bg === 'red' ? 'from-red-50 to-red-100' : 'from-orange-50 to-orange-100';
+            const bgGradient = card.bg === 'green' ? 'from-green-50 to-green-100' : card.bg === 'blue' ? 'from-blue-50 to-blue-100' : card.bg === 'red' ? 'from-red-50 to-red-100' : 'from-orange-50 to-orange-100';
             const iconBg = card.bg === 'green' ? 'bg-green-100 text-green-600' : card.bg === 'blue' ? 'bg-blue-100 text-blue-600' : card.bg === 'red' ? 'bg-red-100 text-red-600' : 'bg-orange-100 text-orange-600';
-            const trendColor = card.bg === 'red' && card.trend === 'CRÍTICO' ? 'text-red-600 bg-red-100' : 'text-' + card.bg + '-500 bg-' + card.bg + '-100';
+            const bgDot = card.bg === 'green' ? 'bg-green-500/10' : card.bg === 'blue' ? 'bg-blue-500/10' : card.bg === 'red' ? 'bg-red-500/10' : 'bg-orange-500/10';
+            const bgDotHover = card.bg === 'green' ? 'group-hover:bg-green-500/20' : card.bg === 'blue' ? 'group-hover:bg-blue-500/20' : card.bg === 'red' ? 'group-hover:bg-red-500/20' : 'group-hover:bg-orange-500/20';
+            const trendBg = card.bg === 'red' && card.trend === 'CRÍTICO' ? 'text-red-600 bg-red-100' : card.bg === 'green' ? 'text-green-500 bg-green-100' : card.bg === 'blue' ? 'text-blue-500 bg-blue-100' : 'text-orange-500 bg-orange-100';
             
             return (
-              <Card key={idx} className="relative overflow-hidden border-none shadow-lg bg-gradient-to-br " + bgColor + " hover:scale-[1.02] transition-transform duration-300 group flex-shrink-0 w-full sm:w-72 snap-start">
-                <div className="absolute right-0 top-0 h-24 w-24 " + (card.bg === 'green' ? 'bg-green-500/10' : card.bg === 'blue' ? 'bg-blue-500/10' : card.bg === 'red' ? 'bg-red-500/10' : 'bg-orange-500/10') + " rounded-bl-full -mr-4 -mt-4 transition-all group-hover:" + (card.bg === 'green' ? 'bg-green-500/20' : card.bg === 'blue' ? 'bg-blue-500/20' : card.bg === 'red' ? 'bg-red-500/20' : 'bg-orange-500/20') + ""></div>
+              <Card key={idx} className={`relative overflow-hidden border-none shadow-lg bg-gradient-to-br ${bgGradient} hover:scale-[1.02] transition-transform duration-300 group flex-shrink-0 w-full sm:w-72 snap-start`}>
+                <div className={`absolute right-0 top-0 h-24 w-24 ${bgDot} rounded-bl-full -mr-4 -mt-4 transition-all ${bgDotHover}`}></div>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 relative z-10">
                   <CardTitle className="text-sm font-medium text-muted-foreground">{card.title}</CardTitle>
-                  <div className={"h-8 w-8 rounded-full flex items-center justify-center " + iconBg}>
+                  <div className={`h-8 w-8 rounded-full flex items-center justify-center ${iconBg}`}>
                     <Icon className="h-4 w-4" />
                   </div>
                 </CardHeader>
                 <CardContent className="relative z-10">
                   <div className="text-3xl font-bold text-gray-800" data-testid={card.test}>{card.value}</div>
                   <p className="text-xs text-muted-foreground mt-2 flex items-center gap-1">
-                    <span className={trendColor + " font-bold flex items-center px-1.5 py-0.5 rounded-md"}>
+                    <span className={`${trendBg} font-bold flex items-center px-1.5 py-0.5 rounded-md`}>
                       <TrendingUp className="h-3 w-3 mr-1" /> {card.trend}
                     </span>
                   </p>
