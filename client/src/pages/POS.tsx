@@ -302,33 +302,43 @@ export default function POS() {
                             </div>
                             
                             <div className="bg-white rounded-lg p-3 border border-orange-100">
-                              <p className="text-xs text-muted-foreground mb-2">Quantidade ({product.unit})</p>
-                              <div className="flex items-center justify-between gap-2">
+                              <p className="text-xs text-muted-foreground mb-3">Editar Quantidade ({product.unit})</p>
+                              <div className="flex items-center justify-between gap-2 mb-3">
                                 <button 
-                                  className="flex-1 h-12 flex items-center justify-center rounded-lg bg-red-500 hover:bg-red-600 text-white font-bold transition-colors shadow-md active:scale-95"
+                                  className="h-12 px-4 flex items-center justify-center rounded-lg bg-red-500 hover:bg-red-600 text-white font-bold transition-colors shadow-md active:scale-95"
                                   onClick={() => handleQuantityChange(item.productId, -1)}
                                   data-testid={`button-decrease-mobile-${item.productId}`}
                                 >
                                   <Minus className="h-6 w-6" />
                                 </button>
-                                <div className="px-6 h-12 flex items-center rounded-lg border-2 border-orange-300 bg-orange-50 text-xl font-bold text-orange-600">
-                                  {item.quantity.toFixed(product.unit === 'kg' ? 1 : 0)}
-                                </div>
+                                <Input
+                                  type="number"
+                                  step={product.unit === 'kg' ? '0.1' : product.unit === 'g' ? '1' : '1'}
+                                  value={item.quantity.toFixed(product.unit === 'kg' ? 1 : product.unit === 'g' ? 0 : 0)}
+                                  onChange={(e) => {
+                                    const newQty = parseFloat(e.target.value) || 0;
+                                    if (newQty > 0) {
+                                      updateCartQuantity(item.productId, newQty);
+                                    }
+                                  }}
+                                  className="flex-1 h-12 text-center text-xl font-bold border-2 border-orange-300 bg-orange-50 text-orange-600"
+                                  data-testid={`input-quantity-${item.productId}`}
+                                />
                                 <button 
-                                  className="flex-1 h-12 flex items-center justify-center rounded-lg bg-green-500 hover:bg-green-600 text-white font-bold transition-colors shadow-md active:scale-95"
+                                  className="h-12 px-4 flex items-center justify-center rounded-lg bg-green-500 hover:bg-green-600 text-white font-bold transition-colors shadow-md active:scale-95"
                                   onClick={() => handleQuantityChange(item.productId, 1)}
                                   data-testid={`button-increase-mobile-${item.productId}`}
                                 >
                                   <Plus className="h-6 w-6" />
                                 </button>
-                                <button 
-                                  className="flex-1 h-12 flex items-center justify-center rounded-lg bg-red-100 hover:bg-red-200 text-red-600 font-bold transition-colors border border-red-300 active:scale-95"
-                                  onClick={() => removeFromCart(item.productId)}
-                                  data-testid={`button-remove-mobile-${item.productId}`}
-                                >
-                                  <Trash2 className="h-5 w-5" />
-                                </button>
                               </div>
+                              <button 
+                                className="w-full h-10 flex items-center justify-center rounded-lg bg-red-100 hover:bg-red-200 text-red-600 font-bold transition-colors border border-red-300 active:scale-95"
+                                onClick={() => removeFromCart(item.productId)}
+                                data-testid={`button-remove-mobile-${item.productId}`}
+                              >
+                                <Trash2 className="h-5 w-5 mr-2" /> Remover
+                              </button>
                             </div>
                           </div>
                         );
