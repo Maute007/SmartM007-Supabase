@@ -1,8 +1,8 @@
-# Mercearia Smart - Sistema de Vendas
+# SmartM007 - Sistema de Vendas
 
 ## Overview
 
-Mercearia Smart is a point-of-sale (POS) and inventory management system designed for grocery stores and small markets. The application provides a complete solution for sales transactions, product management, reporting, user management, and task tracking. It features role-based access control (admin, manager, seller), real-time notifications, audit logging, and comprehensive reporting capabilities.
+SmartM007 is a point-of-sale (POS) and inventory management system designed for grocery stores and small markets. The application provides a complete solution for sales transactions, product management, reporting, user management, and task tracking. It features role-based access control (admin, manager, seller), real-time notifications, audit logging, and comprehensive reporting capabilities.
 
 The system is built as a full-stack TypeScript application with a React frontend and Express backend, using PostgreSQL (via Neon serverless) for data persistence.
 

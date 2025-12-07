@@ -48,7 +48,7 @@ export default function Setup() {
       <Card className="w-full max-w-md border-emerald-200 shadow-lg">
         <CardHeader className="text-center">
           <CardTitle className="text-2xl text-emerald-700">🎉 Bem-vindo!</CardTitle>
-          <CardDescription>Sistema de Vendas - Mercearia Smart</CardDescription>
+          <CardDescription>Sistema de Vendas - SmartM007</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           {!isDone ? (
@@ -63,9 +63,7 @@ export default function Setup() {
               <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4 text-xs">
                 <p className="text-emerald-900 font-semibold mb-2">📋 Credenciais Padrão:</p>
                 <ul className="text-emerald-800 space-y-1">
-                  <li>👨‍💼 <strong>Admin:</strong> admin / senha123</li>
-                  <li>👨‍💻 <strong>Vendedor:</strong> joao / senha123</li>
-                  <li>👩‍💼 <strong>Gerente:</strong> maria / senha123</li>
+                  <li><strong>Admin:</strong> admin / senha123</li>
                 </ul>
               </div>
 

@@ -111,9 +111,9 @@ export function MobileSidebar({ open, onOpenChange }: MobileSidebarProps) {
               </div>
               <div>
                 <h1 className="font-heading font-bold text-xl tracking-tight leading-none">
-                  Mercearia
+                  SmartM007
                 </h1>
-                <span className="text-xs font-medium text-muted-foreground">Smart System</span>
+                <span className="text-xs font-medium text-muted-foreground">Sistema de Vendas</span>
               </div>
             </div>
             <Button 

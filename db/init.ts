@@ -22,25 +22,7 @@ export async function seedDatabase() {
     }
   ]);
 
-  // Criar usuários adicionais
-  await db.insert(users).values([
-    {
-      name: 'João Silva',
-      username: 'joao',
-      password: hashedPassword,
-      role: 'seller',
-      avatar: '👨‍💻'
-    },
-    {
-      name: 'Maria Santos',
-      username: 'maria',
-      password: hashedPassword,
-      role: 'manager',
-      avatar: '👩‍💼'
-    }
-  ]);
-
-  console.log('✓ Usuários criados');
+  console.log('✓ Usuário administrador criado');
 
   // Criar categorias
   console.log('Criando categorias...');
@@ -179,9 +161,7 @@ export async function seedDatabase() {
   console.log('✓ Produtos criados');
   console.log('\n✅ Banco de dados populado com sucesso!');
   console.log('\n📋 Credenciais padrão:');
-  console.log('   Admin: username=admin, senha=senha123');
-  console.log('   Vendedor: username=joao, senha=senha123');
-  console.log('   Gerente: username=maria, senha=senha123\n');
+  console.log('   Admin: username=admin, senha=senha123\n');
 }
 
 export async function initializeDatabase() {
