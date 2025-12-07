@@ -1,7 +1,7 @@
 import { db } from './index';
 import { users, categories, products } from '../shared/schema';
 import bcrypt from 'bcrypt';
-import { count } from 'drizzle-orm';
+import { count, eq } from 'drizzle-orm';
 
 // Função para popular o banco com dados padrão
 export async function seedDatabase() {
@@ -164,6 +164,30 @@ export async function seedDatabase() {
   console.log('   Admin: username=admin, senha=senha123\n');
 }
 
+async function ensureAdminExists() {
+  console.log('🔐 Verificando usuário admin...');
+  
+  const existingAdmin = await db.select().from(users).where(eq(users.username, 'admin')).limit(1);
+  
+  if (existingAdmin.length > 0) {
+    console.log('✓ Usuário admin já existe');
+    return;
+  }
+  
+  console.log('📝 Criando usuário admin padrão...');
+  const hashedPassword = await bcrypt.hash('senha123', 10);
+  
+  await db.insert(users).values({
+    name: 'Administrador',
+    username: 'admin',
+    password: hashedPassword,
+    role: 'admin',
+    avatar: 'A'
+  });
+  
+  console.log('✓ Usuário admin criado (username: admin, senha: senha123)');
+}
+
 export async function initializeDatabase() {
   const isProduction = process.env.NODE_ENV === 'production';
   const environment = isProduction ? 'PRODUÇÃO' : 'DESENVOLVIMENTO';
@@ -171,31 +195,64 @@ export async function initializeDatabase() {
   console.log(`🔍 Verificando banco de dados (${environment})...`);
   
   try {
-    // Verifica se já existem usuários no banco
+    // SEMPRE garantir que admin existe (produção e desenvolvimento)
+    await ensureAdminExists();
+    
+    // Verifica se já existem outros dados no banco
     const [result] = await db.select({ count: count() }).from(users);
     const userCount = Number(result.count);
 
-    if (userCount > 0) {
+    if (userCount > 1) {
       console.log(`✓ Banco de dados já inicializado (${userCount} usuários encontrados)`);
       return;
     }
 
-    console.log(`🌱 Banco vazio detectado! Inicializando banco de dados de ${environment}...`);
-    console.log(`📍 Environment: NODE_ENV=${process.env.NODE_ENV || 'not set'}`);
-    console.log(`📍 Database: ${process.env.DATABASE_URL ? 'Connected' : 'NOT CONNECTED'}`);
-
-    // Popular banco com dados padrão
-    await seedDatabase();
+    // Se só tem o admin, popular com dados de exemplo (apenas desenvolvimento)
+    if (!isProduction) {
+      console.log(`🌱 Populando banco com dados de exemplo...`);
+      await seedSampleData();
+    }
   } catch (error) {
     console.error('❌ Erro ao inicializar banco de dados:', error);
     
-    // Em produção, falhar imediatamente para evitar deploy sem dados
     if (isProduction) {
       console.error('🚨 ERRO CRÍTICO: Não foi possível inicializar o banco de dados em produção!');
       throw error;
     }
     
-    // Em desenvolvimento, apenas avisar mas continuar
     console.warn('⚠️  Servidor continuará mas pode não ter dados iniciais');
+  }
+}
+
+async function seedSampleData() {
+  try {
+    const [catCount] = await db.select({ count: count() }).from(categories);
+    if (Number(catCount.count) > 0) {
+      console.log('✓ Dados de exemplo já existem');
+      return;
+    }
+
+    const categoriesResult = await db.insert(categories).values([
+      { name: 'Frutas', color: 'bg-orange-100 text-orange-800 border-orange-200' },
+      { name: 'Verduras', color: 'bg-green-100 text-green-800 border-green-200' },
+      { name: 'Grãos', color: 'bg-amber-100 text-amber-800 border-amber-200' },
+      { name: 'Bebidas', color: 'bg-blue-100 text-blue-800 border-blue-200' },
+      { name: 'Laticínios', color: 'bg-purple-100 text-purple-800 border-purple-200' }
+    ]).returning();
+
+    const [frutas, verduras, graos, bebidas, laticinios] = categoriesResult;
+
+    await db.insert(products).values([
+      { sku: 'FRUTA001', name: 'Banana Prata', categoryId: frutas.id, price: '6.50', costPrice: '4.00', stock: '50', minStock: '10', unit: 'kg', image: 'B' },
+      { sku: 'FRUTA002', name: 'Maçã Fuji', categoryId: frutas.id, price: '8.90', costPrice: '5.50', stock: '30', minStock: '10', unit: 'kg', image: 'M' },
+      { sku: 'VERD001', name: 'Alface Americana', categoryId: verduras.id, price: '4.50', costPrice: '2.50', stock: '25', minStock: '10', unit: 'un', image: 'A' },
+      { sku: 'GRAO001', name: 'Arroz Integral 1kg', categoryId: graos.id, price: '8.90', costPrice: '5.50', stock: '100', minStock: '20', unit: 'pack', image: 'R' },
+      { sku: 'BEB001', name: 'Água Mineral 500ml', categoryId: bebidas.id, price: '2.50', costPrice: '1.20', stock: '200', minStock: '50', unit: 'un', image: 'A' },
+      { sku: 'LAT001', name: 'Leite Integral 1L', categoryId: laticinios.id, price: '5.90', costPrice: '4.00', stock: '60', minStock: '20', unit: 'un', image: 'L' }
+    ]);
+
+    console.log('✓ Dados de exemplo criados');
+  } catch (e) {
+    console.log('Dados de exemplo já existem ou erro:', e);
   }
 }
