@@ -26,6 +26,7 @@ declare module 'http' {
     rawBody: unknown
   }
 }
+
 // Middleware de readiness check - responde 503 se app não estiver pronto
 app.use((req, res, next) => {
   if (!isAppReady && !req.path.startsWith('/health')) {
@@ -53,7 +54,6 @@ app.use(
     resave: false,
     saveUninitialized: true,
     cookie: {
-      // Em produção (Replit), confia em X-Forwarded-Proto header para HTTPS
       secure: process.env.NODE_ENV === 'production' ? 'auto' : false,
       httpOnly: true,
       sameSite: 'lax',
@@ -92,11 +92,61 @@ app.use((req, res, next) => {
   next();
 });
 
+// 🆕 NOVA FUNÇÃO: Tentar múltiplas portas
+async function tryStartServer(
+  server: Server,
+  ports: number[],
+  host: string
+): Promise<number> {
+  for (let i = 0; i < ports.length; i++) {
+    const port = ports[i];
+    try {
+      await new Promise<void>((resolve, reject) => {
+        server.listen({ port, host, reusePort: true }, () => {
+          resolve();
+        }).on('error', (err: any) => {
+          if (err.code === 'EADDRINUSE') {
+            reject(new Error(`Port ${port} is already in use`));
+          } else if (err.code === 'EACCES') {
+            reject(new Error(`Port ${port} requires elevated privileges`));
+          } else if (err.code === 'ENOTSUP') {
+            reject(new Error(`Windows socket error with host ${host}`));
+          } else {
+            reject(err);
+          }
+        });
+      });
+      
+      // Se chegou aqui, conseguiu iniciar
+      return port;
+    } catch (err) {
+      const isLastPort = i === ports.length - 1;
+      
+      if (isLastPort) {
+        console.error(`❌ FATAL: Todas as portas estão em uso: ${ports.join(', ')}`);
+        console.error(`💡 Tente fechar outros processos ou use: PORT=8000 npm run dev`);
+        throw err;
+      } else {
+        console.log(`⚠️  Porta ${port} em uso, tentando próxima...`);
+      }
+    }
+  }
+  
+  throw new Error('Failed to start server on any port');
+}
+
 export default async function runApp(
   setup: (app: Express, server: Server) => Promise<void>,
 ) {
   let server: Server;
-  const port = parseInt(process.env.PORT || '5000', 10);
+  
+  // 🆕 CONFIGURAÇÃO DE MÚLTIPLAS PORTAS
+  const preferredPort = parseInt(process.env.PORT || '3000', 10);
+const alternatePorts = [3000, 5000, 8080, 3001, 5001, 8000, 8001, 8888, 9000]; // Mais portas!  
+  // Remove duplicatas e coloca a porta preferida no início
+  const ports = [preferredPort, ...alternatePorts.filter(p => p !== preferredPort)];
+  
+  const host = process.env.HOST || 'localhost';
   
   // PHASE 1: Fatal bootstrap - env/DB/routes (fail-fast required)
   try {
@@ -134,27 +184,12 @@ export default async function runApp(
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
     
-    // Log completo do erro incluindo stack trace
     console.error('Request error:', err.message || err);
     if (err instanceof Error && err.stack) {
       console.error('Stack trace:', err.stack);
     }
     
     res.status(status).json({ message });
-  });
-
-  // Handler de erros do servidor (apenas bind errors são fatais)
-  server.on('error', (err: any) => {
-    if (err.code === 'EADDRINUSE') {
-      console.error(`❌ FATAL: Port ${port} is already in use`);
-      process.exit(1);
-    } else if (err.code === 'EACCES') {
-      console.error(`❌ FATAL: Port ${port} requires elevated privileges`);
-      process.exit(1);
-    } else {
-      // Outros erros apenas logar
-      console.error('⚠️  Server error (non-fatal):', err);
-    }
   });
 
   // Health check endpoint (sempre disponível)
@@ -165,14 +200,17 @@ export default async function runApp(
     });
   });
 
-  // Iniciar o servidor na porta e host corretos
-  server.listen({
-    port,
-    host: "0.0.0.0",
-    reusePort: true,
-  }, async () => {
-    log(`✓ Server listening on 0.0.0.0:${port}`);
+  // 🆕 INICIAR SERVIDOR COM MÚLTIPLAS PORTAS
+  try {
+    const actualPort = await tryStartServer(server, ports, host);
+    
+    log(`✓ Server listening on ${host}:${actualPort}`);
     log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+    log(`Access at: http://${host}:${actualPort}`);
+    
+    if (actualPort !== preferredPort) {
+      log(`⚠️  Note: Started on port ${actualPort} (preferred ${preferredPort} was in use)`);
+    }
     
     // PHASE 2: Setup (Vite/static) - após servidor estar rodando
     try {
@@ -189,7 +227,12 @@ export default async function runApp(
       console.error('\n⚠️  Server is running but application setup incomplete.');
       console.error('⚠️  Responding with 503 to all requests until fixed.');
       console.error('⚠️  Check logs and redeploy with fixes.\n');
-      // NÃO fazer process.exit - servidor continua respondendo 503
     }
-  });
+  } catch (error) {
+    console.error('❌ FATAL: Could not start server on any port');
+    process.exit(1);
+  }
+}
+export function markAppReady() {
+  isAppReady = true;
 }

@@ -1,12 +1,15 @@
+import "../env";
+
 import fs from "node:fs";
 import { type Server } from "node:http";
 import path from "node:path";
 
-import express, { type Express, type Request } from "express";
+import express, { type Express } from "express";
 
-import runApp from "./app";
+import { app } from "./app";
+import runApp from "./runApp";
 
-export async function serveStatic(app: Express, server: Server) {
+export async function serveStatic(app: Express, _server: Server) {
   const distPath = path.resolve(import.meta.dirname, "public");
 
   if (!fs.existsSync(distPath)) {
@@ -17,12 +20,11 @@ export async function serveStatic(app: Express, server: Server) {
 
   app.use(express.static(distPath));
 
-  // fall through to index.html if the file doesn't exist
   app.use("*", (_req, res) => {
     res.sendFile(path.resolve(distPath, "index.html"));
   });
 }
 
 (async () => {
-  await runApp(serveStatic);
+  await runApp(app, serveStatic);
 })();
