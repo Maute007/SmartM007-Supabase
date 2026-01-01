@@ -1,5 +1,5 @@
-// Carregar .env ANTES de qualquer outra coisa
-import "../env";
+// Carregar .env APENAS em desenvolvimento
+await import("../env");
 
 import fs from "node:fs";
 import { type Server } from "node:http";
@@ -62,16 +62,12 @@ export async function setupVite(app: Express, server: Server) {
   });
 }
 
-// DEBUG
-console.log("\n🔧 Configuração do servidor:");
+// DEBUG - apenas em desenvolvimento
+console.log("\n🔧 Configuração do servidor (DESENVOLVIMENTO):");
 console.log(`   HOST: ${process.env.HOST || "localhost"}`);
 console.log(`   PORT: ${process.env.PORT || "9001"}`);
 console.log(`   NODE_ENV: ${process.env.NODE_ENV || "development"}`);
-console.log(
-  `   DATABASE_URL: ${
-    process.env.DATABASE_URL ? "✅ configurada" : "❌ NÃO DEFINIDA"
-  }`,
-);
+console.log(`   DATABASE_URL: ${process.env.DATABASE_URL ? "✅ configurada" : "❌ NÃO DEFINIDA"}`);
 console.log("");
 
 (async () => {
