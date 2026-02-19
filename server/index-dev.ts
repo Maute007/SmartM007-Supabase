@@ -1,5 +1,5 @@
-// Carregar .env APENAS em desenvolvimento
-await import("../env");
+// Carregar .env primeiro (import estático para rodar antes de app/db)
+import "../env";
 
 import fs from "node:fs";
 import { type Server } from "node:http";

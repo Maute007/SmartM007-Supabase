@@ -1,13 +1,18 @@
 import { ReactNode, useState, useEffect } from 'react';
+import { useWebSocket } from '@/hooks/useWebSocket';
 import { Sidebar } from './Sidebar';
 import { MobileSidebar } from './MobileSidebar';
 import { Header } from './Header';
 import { useAuth } from '@/lib/auth';
-import { Redirect } from 'wouter';
+import { Redirect, useLocation } from 'wouter';
 import { cn } from '@/lib/utils';
+
+const SELLER_ALLOWED = ['/pos', '/sales-history'];
 
 export function MainLayout({ children }: { children: ReactNode }) {
   const { user, isLoading } = useAuth();
+  const [location] = useLocation();
+  useWebSocket(!!user);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     const saved = localStorage.getItem('sidebar-collapsed');
@@ -39,6 +44,10 @@ export function MainLayout({ children }: { children: ReactNode }) {
 
   if (!user) {
     return <Redirect to="/login" />;
+  }
+
+  if (user.role === 'seller' && !SELLER_ALLOWED.includes(location)) {
+    return <Redirect to="/pos" />;
   }
 
   return (

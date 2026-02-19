@@ -321,6 +321,94 @@ export const auditLogsApi = {
   }
 };
 
+// Receipt Settings API
+export type ReceiptPaperSize = '80x60' | '80x70' | '80x80' | 'a6';
+
+export interface ReceiptSettings {
+  paperSize: ReceiptPaperSize;
+  printOnConfirm: boolean;
+}
+
+export const receiptSettingsApi = {
+  get: async (): Promise<ReceiptSettings> => {
+    const res = await fetch(`${API_BASE}/settings/receipt`, { credentials: 'include' });
+    if (!res.ok) throw new Error('Erro ao buscar configurações');
+    return res.json();
+  },
+  update: async (settings: Partial<ReceiptSettings>): Promise<ReceiptSettings> => {
+    const res = await fetch(`${API_BASE}/settings/receipt`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(settings),
+      credentials: 'include'
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Erro ao salvar');
+    }
+    return res.json();
+  }
+};
+
+export const receiptsApi = {
+  save: async (saleId: string): Promise<{ success: boolean; path: string }> => {
+    const res = await fetch(`${API_BASE}/receipts/save`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ saleId }),
+      credentials: 'include'
+    });
+    if (!res.ok) throw new Error('Erro ao guardar recibo');
+    return res.json();
+  },
+};
+
+// Webhooks API
+export type WebhookEvent = 'sale.created' | 'notification.created' | 'order.approved' | 'order.cancelled' | 'product.updated' | 'stock.low';
+
+export interface Webhook {
+  id: string;
+  url: string;
+  events: WebhookEvent[];
+  secret?: string;
+  enabled: boolean;
+}
+
+export const webhooksApi = {
+  getAll: async (): Promise<Webhook[]> => {
+    const res = await fetch(`${API_BASE}/webhooks`, { credentials: 'include' });
+    if (!res.ok) throw new Error('Erro ao buscar webhooks');
+    return res.json();
+  },
+  create: async (data: Omit<Webhook, 'id'>): Promise<Webhook> => {
+    const res = await fetch(`${API_BASE}/webhooks`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+      credentials: 'include'
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Erro ao criar webhook');
+    }
+    return res.json();
+  },
+  update: async (id: string, data: Partial<Webhook>): Promise<Webhook> => {
+    const res = await fetch(`${API_BASE}/webhooks/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+      credentials: 'include'
+    });
+    if (!res.ok) throw new Error('Erro ao atualizar webhook');
+    return res.json();
+  },
+  delete: async (id: string): Promise<void> => {
+    const res = await fetch(`${API_BASE}/webhooks/${id}`, { method: 'DELETE', credentials: 'include' });
+    if (!res.ok) throw new Error('Erro ao deletar webhook');
+  }
+};
+
 // System API
 export const systemApi = {
   getEditCount: async (): Promise<EditCount> => {

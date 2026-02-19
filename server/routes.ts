@@ -5,6 +5,16 @@ import { insertUserSchema, insertProductSchema, insertCategorySchema, insertSale
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
 import { seedDatabase } from "../db/init";
+import {
+  getReceiptSettings,
+  saveReceiptSettings,
+  saveReceiptToDisk,
+  generateReceiptHTML,
+  type ReceiptSettings,
+  type ReceiptPaperSize,
+} from "./receipts";
+import { attachWebSocket, wsEvents } from "./websocket";
+import { triggerWebhook, getAllWebhooks, addWebhook, updateWebhook, deleteWebhook, type WebhookEvent } from "./webhooks";
 
 // Session augmentation
 declare module 'express-session' {
@@ -269,6 +279,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const data = insertProductSchema.parse(req.body);
       const newProduct = await storage.createProduct(data);
 
+      wsEvents.product(newProduct);
+      wsEvents.invalidate(['/api/products', 'notifications', '/api/notifications']);
+      void triggerWebhook('product.updated', { action: 'created', product: newProduct });
+
       // Increment edit count for non-admins
       if (req.session.role !== 'admin') {
         const today = new Date().toISOString().split('T')[0];
@@ -345,6 +359,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      wsEvents.product(updated);
+      wsEvents.invalidate(['/api/products', 'notifications', '/api/notifications']);
+
       res.json(updated);
     } catch (error) {
       console.error("Update product error:", error);
@@ -397,6 +414,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         metadata: { productId: product.id, action: "stock_increased" }
       });
 
+      wsEvents.product(updated);
+      wsEvents.invalidate(['/api/products', 'notifications', '/api/notifications']);
+
       res.json(updated);
     } catch (error) {
       console.error("Increase stock error:", error);
@@ -424,6 +444,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       // Notify all users
+      wsEvents.product(null);
+      wsEvents.invalidate(['/api/products', 'notifications', '/api/notifications']);
+
       await storage.createNotification({
         userId: null,
         type: "warning",
@@ -506,6 +529,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         metadata: { saleId: newSale.id }
       });
 
+      wsEvents.sale(newSale);
+      wsEvents.invalidate(['/api/sales', 'notifications', '/api/notifications']);
+      void triggerWebhook('sale.created', newSale);
+
       res.json(newSale);
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -513,6 +540,282 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       console.error("Create sale error:", error);
       res.status(500).json({ error: "Erro ao criar venda" });
+    }
+  });
+
+  app.post("/api/sales/:id/return", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const saleId = req.params.id;
+      const sale = await storage.getSaleById(saleId);
+      if (!sale) return res.status(404).json({ error: "Venda não encontrada" });
+      if (sale.userId !== req.session.userId) {
+        return res.status(403).json({ error: "Só pode registar devolução das suas próprias vendas" });
+      }
+      const saleDate = new Date(sale.createdAt).toISOString().split("T")[0];
+      const today = new Date().toISOString().split("T")[0];
+      if (saleDate !== today) {
+        return res.status(403).json({ error: "Só pode registar devolução de vendas de hoje" });
+      }
+      const returnsLast2Days = await storage.getSaleReturnsCountLast2Days(req.session.userId!);
+      if (returnsLast2Days >= 5) {
+        return res.status(403).json({
+          error: "Limite atingido",
+          message: "Máximo de 5 devoluções em 2 dias. Contacte o gerente.",
+        });
+      }
+      for (const item of sale.items) {
+        await storage.restoreStock(item.productId, item.quantity);
+      }
+      await storage.createSaleReturn({ saleId, userId: req.session.userId! });
+      await storage.createAuditLog({
+        userId: req.session.userId!,
+        action: "SALE_RETURN",
+        entityType: "sale",
+        entityId: sale.id,
+        details: { total: sale.total, itemCount: sale.items.length },
+      });
+      await storage.createNotification({
+        userId: null,
+        type: "info",
+        message: `Devolução registada: venda ${sale.id.slice(-6)}`,
+        metadata: { saleId },
+      });
+      wsEvents.invalidate(["/api/sales", "notifications", "/api/notifications"]);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Sale return error:", error);
+      res.status(500).json({ error: "Erro ao registar devolução" });
+    }
+  });
+
+  app.get("/api/sales/returns/limit", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const count = await storage.getSaleReturnsCountLast2Days(req.session.userId!);
+      res.json({ count, remaining: Math.max(0, 5 - count) });
+    } catch (error) {
+      console.error("Get returns limit error:", error);
+      res.status(500).json({ error: "Erro ao verificar limite" });
+    }
+  });
+
+  // ==================== WEBHOOK ROUTES ====================
+
+  app.get("/api/webhooks", requireAuth, requireAdmin, (req: Request, res: Response) => {
+    try {
+      res.json(getAllWebhooks());
+    } catch (error) {
+      console.error("Get webhooks error:", error);
+      res.status(500).json({ error: "Erro ao buscar webhooks" });
+    }
+  });
+
+  app.post("/api/webhooks", requireAuth, requireAdmin, (req: Request, res: Response) => {
+    try {
+      const { url, events, secret, enabled } = req.body;
+      if (!url || !events?.length) {
+        return res.status(400).json({ error: "URL e eventos são obrigatórios" });
+      }
+      const validEvents: WebhookEvent[] = ['sale.created', 'notification.created', 'order.approved', 'order.cancelled', 'product.updated', 'stock.low'];
+      const filtered = events.filter((e: string) => validEvents.includes(e as WebhookEvent));
+      const webhook = addWebhook({ url, events: filtered, secret: secret || undefined, enabled: enabled !== false });
+      res.status(201).json(webhook);
+    } catch (error) {
+      console.error("Add webhook error:", error);
+      res.status(500).json({ error: "Erro ao criar webhook" });
+    }
+  });
+
+  app.patch("/api/webhooks/:id", requireAuth, requireAdmin, (req: Request, res: Response) => {
+    try {
+      const { url, events, secret, enabled } = req.body;
+      const updated = updateWebhook(req.params.id, { url, events, secret, enabled });
+      if (!updated) return res.status(404).json({ error: "Webhook não encontrado" });
+      res.json(updated);
+    } catch (error) {
+      console.error("Update webhook error:", error);
+      res.status(500).json({ error: "Erro ao atualizar webhook" });
+    }
+  });
+
+  app.delete("/api/webhooks/:id", requireAuth, requireAdmin, (req: Request, res: Response) => {
+    try {
+      if (!deleteWebhook(req.params.id)) return res.status(404).json({ error: "Webhook não encontrado" });
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Delete webhook error:", error);
+      res.status(500).json({ error: "Erro ao deletar webhook" });
+    }
+  });
+
+  // ==================== RECEIPT ROUTES ====================
+
+  app.get("/api/settings/receipt", requireAuth, (req: Request, res: Response) => {
+    try {
+      const settings = getReceiptSettings();
+      res.json(settings);
+    } catch (error) {
+      console.error("Get receipt settings error:", error);
+      res.status(500).json({ error: "Erro ao buscar configurações de recibo" });
+    }
+  });
+
+  app.put("/api/settings/receipt", requireAuth, requireAdmin, (req: Request, res: Response) => {
+    try {
+      const { paperSize, printOnConfirm } = req.body as Partial<ReceiptSettings>;
+      const current = getReceiptSettings();
+      const settings: ReceiptSettings = {
+        paperSize: paperSize ?? current.paperSize,
+        printOnConfirm: printOnConfirm ?? current.printOnConfirm,
+      };
+      if (paperSize && !['80x60', '80x70', '80x80', 'a6'].includes(paperSize)) {
+        return res.status(400).json({ error: "Tamanho de papel inválido" });
+      }
+      saveReceiptSettings(settings);
+      res.json(settings);
+    } catch (error) {
+      console.error("Save receipt settings error:", error);
+      res.status(500).json({ error: "Erro ao salvar configurações" });
+    }
+  });
+
+  app.post("/api/receipts/save", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const saleId = req.body?.saleId ?? req.body?.sale_id;
+      if (!saleId || typeof saleId !== "string") {
+        return res.status(400).json({ error: "saleId é obrigatório" });
+      }
+
+      const sale = await storage.getSaleById(saleId);
+      if (!sale) return res.status(404).json({ error: "Venda não encontrada" });
+
+      const user = await storage.getUser(sale.userId);
+      const userName = user?.name ?? "Desconhecido";
+
+      const preview = sale.preview as {
+        items?: Array<{ productName?: string; quantity?: number; productUnit?: string; priceAtSale?: number }>;
+        subtotal?: number;
+        discountAmount?: number;
+        total?: number;
+        paymentMethod?: string;
+        amountReceived?: number;
+        change?: number;
+      } | null;
+
+      let receiptItems: Array<{ name: string; quantity: number; unit: string; price: number; total: number }>;
+      const rawItems = preview?.items ?? [];
+      if (Array.isArray(rawItems) && rawItems.length > 0) {
+        receiptItems = rawItems.map((i: any) => {
+          const qty = Number(i?.quantity) || 0;
+          const price = Number(i?.priceAtSale) ?? 0;
+          return {
+            name: String(i?.productName ?? "Produto").trim() || "Produto",
+            quantity: qty,
+            unit: String(i?.productUnit ?? "un").trim() || "un",
+            price,
+            total: qty * price,
+          };
+        });
+      } else {
+        const items = Array.isArray(sale.items) ? sale.items : [];
+        receiptItems = await Promise.all(
+          items.map(async (item: any) => {
+            const p = item?.productId ? await storage.getProduct(item.productId) : null;
+            const qty = Number(item?.quantity) ?? 0;
+            const price = Number(item?.priceAtSale) ?? 0;
+            return {
+              name: p?.name ?? "Produto",
+              quantity: qty,
+              unit: p?.unit ?? "un",
+              price,
+              total: qty * price,
+            };
+          })
+        );
+      }
+
+      const totalNum = Number(sale.total) || 0;
+      const receiptData = {
+        saleId: sale.id,
+        createdAt: new Date(sale.createdAt),
+        userName,
+        items: receiptItems,
+        subtotal: Number(preview?.subtotal) ?? totalNum,
+        discountAmount: Number(preview?.discountAmount) ?? 0,
+        total: totalNum,
+        paymentMethod: preview?.paymentMethod ?? sale.paymentMethod ?? "cash",
+        amountReceived: preview?.amountReceived != null ? Number(preview.amountReceived) : (sale.amountReceived ? Number(sale.amountReceived) : undefined),
+        change: preview?.change != null ? Number(preview.change) : (sale.change ? Number(sale.change) : undefined),
+      };
+
+      const settings = getReceiptSettings();
+      const savedPath = saveReceiptToDisk(receiptData, settings.paperSize);
+      res.json({ success: true, path: savedPath });
+    } catch (error) {
+      console.error("Save receipt error:", error);
+      res.status(500).json({ error: "Erro ao guardar recibo" });
+    }
+  });
+
+  app.get("/api/receipts/preview/:saleId", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const sale = await storage.getSaleById(req.params.saleId);
+      if (!sale) return res.status(404).send("Venda não encontrada");
+
+      const user = await storage.getUser(sale.userId);
+      const preview = sale.preview as any;
+      const rawItems = Array.isArray(preview?.items) ? preview.items : [];
+      let items: Array<{ name: string; quantity: number; unit: string; price: number; total: number }>;
+      if (rawItems.length > 0) {
+        items = rawItems.map((i: any) => {
+          const qty = Number(i?.quantity) ?? 0;
+          const price = Number(i?.priceAtSale) ?? 0;
+          return {
+            name: String(i?.productName ?? "Produto").trim() || "Produto",
+            quantity: qty,
+            unit: String(i?.productUnit ?? "un").trim() || "un",
+            price,
+            total: qty * price,
+          };
+        });
+      } else {
+        const saleItems = Array.isArray(sale.items) ? sale.items : [];
+        items = await Promise.all(
+          saleItems.map(async (item: any) => {
+            const p = item?.productId ? await storage.getProduct(item.productId) : null;
+            const qty = Number(item?.quantity) ?? 0;
+            const price = Number(item?.priceAtSale) ?? 0;
+            return {
+              name: p?.name ?? "Produto",
+              quantity: qty,
+              unit: p?.unit ?? "un",
+              price,
+              total: qty * price,
+            };
+          })
+        );
+      }
+
+      const totalNum = Number(sale.total) ?? 0;
+      const receiptData = {
+        saleId: sale.id,
+        createdAt: new Date(sale.createdAt),
+        userName: user?.name ?? "Desconhecido",
+        items,
+        subtotal: Number(preview?.subtotal) ?? totalNum,
+        discountAmount: Number(preview?.discountAmount) ?? 0,
+        total: totalNum,
+        paymentMethod: preview?.paymentMethod ?? sale.paymentMethod ?? "cash",
+        amountReceived: preview?.amountReceived != null ? Number(preview.amountReceived) : (sale.amountReceived ? Number(sale.amountReceived) : undefined),
+        change: preview?.change != null ? Number(preview.change) : (sale.change ? Number(sale.change) : undefined),
+      };
+
+      const settings = getReceiptSettings();
+      const html = generateReceiptHTML(receiptData, settings.paperSize);
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      res.send(html);
+    } catch (error) {
+      console.error("Receipt preview error:", error);
+      res.status(500).send("Erro ao gerar recibo");
     }
   });
 
@@ -755,6 +1058,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         metadata: { orderId: newOrder.id, action: "new_order" }
       });
 
+      wsEvents.order(newOrder);
+      wsEvents.invalidate(['/api/orders', 'notifications', '/api/notifications']);
+
       res.json(newOrder);
     } catch (error) {
       console.error("Create order error:", error);
@@ -833,7 +1139,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const updated = await storage.approveOrder(req.params.id, req.session.userId!);
-      
+
+      wsEvents.order(updated);
+      wsEvents.invalidate(['/api/orders', '/api/products', 'notifications', '/api/notifications']);
+      void triggerWebhook('order.approved', updated);
+
       await storage.createNotification({
         userId: null,
         type: "success",
@@ -860,7 +1170,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const updated = await storage.cancelOrder(req.params.id);
       if (!updated) return res.status(404).json({ error: "Pedido não encontrado" });
-      
+
+      wsEvents.order(updated);
+      wsEvents.invalidate(['/api/orders', 'notifications', '/api/notifications']);
+      void triggerWebhook('order.cancelled', updated);
+
       await storage.createNotification({
         userId: null,
         type: "error",
@@ -902,7 +1216,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const updated = await storage.reopenOrder(req.params.id);
       if (!updated) return res.status(404).json({ error: "Pedido não encontrado" });
-      
+
+      wsEvents.order(updated);
+      wsEvents.invalidate(['/api/orders', 'notifications', '/api/notifications']);
+
       // Registrar reabertura
       const today = new Date().toISOString().split('T')[0];
       await storage.trackReopen({
@@ -979,6 +1296,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   const httpServer = createServer(app);
+  attachWebSocket(httpServer);
 
   return httpServer;
 }

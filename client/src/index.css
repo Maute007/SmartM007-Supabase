@@ -60,6 +60,7 @@
     from { height: var(--radix-accordion-content-height) }
     to { height: 0 }
   }
+
 }
 
 @layer base {
@@ -84,4 +85,23 @@
 }
 ::-webkit-scrollbar-thumb {
   @apply bg-muted-foreground/20 rounded-full hover:bg-muted-foreground/30 transition-colors;
+}
+
+/* Login & hero animations */
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+@layer utilities {
+  .animate-float {
+    animation: float 6s ease-in-out infinite;
+  }
+  .animate-float-slow {
+    animation: float 8s ease-in-out infinite;
+  }
+  .animate-float-slower {
+    animation: float 10s ease-in-out infinite;
+    animation-delay: 1s;
+  }
 }

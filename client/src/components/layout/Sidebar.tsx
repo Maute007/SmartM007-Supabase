@@ -10,15 +10,16 @@ import {
   Settings, 
   CheckSquare, 
   LogOut, 
-  Store,
   Boxes,
   FileText,
+  History,
   ChevronLeft,
   ChevronRight
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/hooks/use-toast';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Logo } from '@/components/Logo';
 
 interface SidebarProps {
   collapsed?: boolean;
@@ -64,54 +65,15 @@ export function Sidebar({ collapsed: controlledCollapsed, onCollapsedChange }: S
   };
 
   const navItems = [
-    { 
-      label: 'Dashboard', 
-      href: '/', 
-      icon: LayoutDashboard,
-      roles: ['admin', 'manager', 'seller'] 
-    },
-    { 
-      label: 'PDV (Vendas)', 
-      href: '/pos', 
-      icon: ShoppingCart,
-      roles: ['admin', 'manager', 'seller'] 
-    },
-    { 
-      label: 'Produtos', 
-      href: '/products', 
-      icon: Package,
-      roles: ['admin', 'manager'] 
-    },
-    { 
-      label: 'Pedidos', 
-      href: '/orders', 
-      icon: Boxes,
-      roles: ['admin', 'manager'] 
-    },
-    { 
-      label: 'Relatórios', 
-      href: '/reports', 
-      icon: BarChart3,
-      roles: ['admin', 'manager'] 
-    },
-    { 
-      label: 'Tarefas', 
-      href: '/tasks', 
-      icon: CheckSquare,
-      roles: ['admin', 'manager', 'seller'] 
-    },
-    { 
-      label: 'Rastreamento', 
-      href: '/tracking', 
-      icon: FileText,
-      roles: ['admin', 'manager'] 
-    },
-    { 
-      label: 'Configurações', 
-      href: '/settings', 
-      icon: Settings,
-      roles: ['admin'] 
-    },
+    { label: 'Dashboard', href: '/', icon: LayoutDashboard, roles: ['admin', 'manager'] as const },
+    { label: 'PDV (Vendas)', href: '/pos', icon: ShoppingCart, roles: ['admin', 'manager', 'seller'] as const },
+    { label: 'Histórico', href: '/sales-history', icon: FileText, roles: ['seller'] as const },
+    { label: 'Produtos', href: '/products', icon: Package, roles: ['admin', 'manager'] as const },
+    { label: 'Pedidos', href: '/orders', icon: Boxes, roles: ['admin', 'manager'] as const },
+    { label: 'Relatórios', href: '/reports', icon: BarChart3, roles: ['admin', 'manager'] as const },
+    { label: 'Tarefas', href: '/tasks', icon: CheckSquare, roles: ['admin', 'manager'] as const },
+    { label: 'Rastreamento', href: '/tracking', icon: History, roles: ['admin', 'manager'] as const },
+    { label: 'Configurações', href: '/settings', icon: Settings, roles: ['admin'] as const },
   ];
 
   const filteredNav = navItems.filter(item => item.roles.includes(role));
@@ -121,18 +83,8 @@ export function Sidebar({ collapsed: controlledCollapsed, onCollapsedChange }: S
       "hidden md:flex flex-col bg-sidebar border-r border-sidebar-border h-screen fixed left-0 top-0 z-20 transition-all duration-300",
       collapsed ? "w-16" : "w-64"
     )}>
-      <div className={cn("p-4 flex items-center gap-3", collapsed ? "justify-center" : "px-6")}>
-        <div className="h-10 w-10 bg-primary rounded-lg flex items-center justify-center shadow-lg shadow-primary/20 shrink-0">
-          <Store className="h-6 w-6 text-primary-foreground" />
-        </div>
-        {!collapsed && (
-          <div>
-            <h1 className="font-heading font-bold text-xl tracking-tight text-sidebar-foreground leading-none">
-              SmartM007
-            </h1>
-            <span className="text-xs font-medium text-muted-foreground">Sistema de Vendas</span>
-          </div>
-        )}
+      <div className={cn("p-4 flex items-center", collapsed ? "justify-center" : "px-4")}>
+        <Logo variant={collapsed ? "sidebar-collapsed" : "sidebar"} className="shrink-0" />
       </div>
 
       <Button

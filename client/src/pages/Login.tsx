@@ -2,16 +2,18 @@ import { useState } from 'react';
 import { useLocation } from 'wouter';
 import { useAuth } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Store, Lock, User } from 'lucide-react';
+import { Lock, User, Eye, EyeOff } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
+import { Logo } from '@/components/Logo';
 
 export default function Login() {
   const { user, login, isLoading } = useAuth();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [, setLocation] = useLocation();
 
@@ -61,22 +63,24 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-emerald-500/20 via-orange-500/10 to-emerald-500/20 flex items-center justify-center p-4">
-      <Card className="w-full max-w-md shadow-2xl border-emerald-200">
-        <CardHeader className="text-center space-y-4 pb-8">
-          <div className="mx-auto h-16 w-16 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-2xl flex items-center justify-center shadow-lg shadow-emerald-500/30 transform rotate-3">
-            <Store className="h-8 w-8 text-white" />
+    <div className="min-h-dvh min-h-screen bg-gradient-to-br from-emerald-500/20 via-orange-500/10 to-emerald-500/20 flex items-center justify-center p-4 sm:p-6 relative overflow-x-hidden">
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute -top-40 -right-40 w-80 h-80 bg-emerald-400/20 rounded-full blur-3xl" />
+        <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-orange-400/15 rounded-full blur-3xl" />
+      </div>
+
+      <Card className="w-full max-w-md shadow-2xl border-emerald-200/80 overflow-hidden relative">
+        <CardHeader className="text-center pt-8 pb-4 sm:pt-10 sm:pb-6 px-6">
+          <div className="flex justify-center px-4 py-6 sm:py-8 rounded-2xl bg-background/80">
+            <Logo variant="hero" />
           </div>
-          <div>
-            <CardTitle className="text-3xl font-heading font-bold bg-gradient-to-r from-emerald-600 to-orange-500 bg-clip-text text-transparent">
-              M007System
-            </CardTitle>
-            <CardDescription className="text-lg">Sistema de Vendas Inteligente</CardDescription>
-          </div>
+          <p className="mt-4 sm:mt-5 text-lg sm:text-xl font-semibold text-center text-foreground">
+            Sistema de Gestão e Vendas
+          </p>
         </CardHeader>
-        <CardContent>
-          <form onSubmit={handleLogin} className="space-y-6">
-            <div className="space-y-2">
+        <CardContent className="px-6 pb-8">
+          <form onSubmit={handleLogin} className="space-y-5 sm:space-y-6">
+            <div className="space-y-2 transition-transform duration-300 hover:translate-x-0.5">
               <Label htmlFor="username" className="text-sm font-medium text-muted-foreground">
                 Usuário
               </Label>
@@ -89,13 +93,13 @@ export default function Login() {
                   placeholder="Digite seu usuário"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  className="pl-10 h-12 text-base bg-muted/30 border-emerald-200 focus:ring-emerald-500"
+                  className="pl-10 h-12 text-base bg-muted/30 border-emerald-200 focus:ring-emerald-500 transition-all duration-300 focus:shadow-md"
                   disabled={isSubmitting}
                 />
               </div>
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-2 transition-transform duration-300 hover:translate-x-0.5">
               <Label htmlFor="password" className="text-sm font-medium text-muted-foreground">
                 Senha
               </Label>
@@ -104,20 +108,33 @@ export default function Login() {
                 <Input
                   id="password"
                   data-testid="input-password"
-                  type="password"
+                  type={showPassword ? 'text' : 'password'}
                   placeholder="Digite sua senha"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="pl-10 h-12 text-base bg-muted/30 border-emerald-200 focus:ring-emerald-500"
+                  className="pl-10 pr-11 h-12 text-base bg-muted/30 border-emerald-200 focus:ring-emerald-500 transition-all duration-300 focus:shadow-md"
                   disabled={isSubmitting}
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                  tabIndex={-1}
+                  aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'}
+                >
+                  {showPassword ? (
+                    <EyeOff className="h-5 w-5" />
+                  ) : (
+                    <Eye className="h-5 w-5" />
+                  )}
+                </button>
               </div>
             </div>
 
             <Button 
               type="submit"
               data-testid="button-login"
-              className="w-full h-12 text-lg font-medium bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 shadow-lg shadow-emerald-500/20 transition-all hover:scale-[1.02]" 
+              className="w-full h-12 text-lg font-medium bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 shadow-lg shadow-emerald-500/20 transition-all duration-300 hover:scale-[1.02] hover:shadow-xl hover:shadow-emerald-500/30 active:scale-[0.99]" 
               disabled={isSubmitting}
             >
               {isSubmitting ? 'Entrando...' : 'Entrar no Sistema'}
@@ -125,10 +142,10 @@ export default function Login() {
 
             <div className="relative">
               <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-gray-200"></div>
+                <div className="w-full border-t border-border"></div>
               </div>
               <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-white px-2 text-muted-foreground">ou</span>
+                <span className="bg-card px-2 text-muted-foreground">ou</span>
               </div>
             </div>
 
@@ -136,14 +153,14 @@ export default function Login() {
               type="button"
               onClick={() => setLocation('/pedidos')}
               variant="outline"
-              className="w-full h-12 text-base font-medium border-2 border-orange-300 text-orange-600 hover:bg-orange-50"
+              className="w-full h-12 text-base font-medium border-2 border-orange-300 text-orange-600 hover:bg-orange-50 transition-all duration-300 hover:scale-[1.01] hover:border-orange-400 active:scale-[0.99]"
             >
               🛒 Fazer Pedido Online (Clientes)
             </Button>
 
-            <div className="text-center text-xs text-muted-foreground pt-6">
-              &copy; 2025 M007System - Sistema Inteligente de Vendas
-            </div>
+            <p className="text-center text-xs text-muted-foreground pt-4">
+              &copy; 2025 Maute360 — Soluções em Negócios
+            </p>
           </form>
         </CardContent>
       </Card>

@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Loader2 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
+import { Logo } from '@/components/Logo';
 
 export default function Setup() {
   const [isLoading, setIsLoading] = useState(false);
@@ -46,9 +47,11 @@ export default function Setup() {
   return (
     <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-emerald-50 to-orange-50 p-4">
       <Card className="w-full max-w-md border-emerald-200 shadow-lg">
-        <CardHeader className="text-center">
+        <CardHeader className="text-center pt-10 pb-6">
+          <div className="flex justify-center mb-6 px-6 py-6 rounded-2xl bg-white/60 backdrop-blur-sm border border-white/80">
+            <Logo variant="card" className="h-20 sm:h-24 max-w-[260px]" />
+          </div>
           <CardTitle className="text-2xl text-emerald-700">🎉 Bem-vindo!</CardTitle>
-          <CardDescription>Sistema de Vendas - SmartM007</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           {!isDone ? (

@@ -9,7 +9,8 @@ import {
   type Task, type InsertTask,
   type Order, type InsertOrder,
   type OrderReopen, type InsertOrderReopen,
-  users, products, categories, sales, notifications, auditLogs, dailyEdits, tasks, orders, orderReopens
+  type SaleReturn, type InsertSaleReturn,
+  users, products, categories, sales, notifications, auditLogs, dailyEdits, tasks, orders, orderReopens, saleReturns
 } from "@shared/schema";
 import { db } from "../db";
 import { eq, and, desc, sql } from "drizzle-orm";
@@ -37,11 +38,15 @@ export interface IStorage {
   updateProduct(id: string, product: Partial<InsertProduct>): Promise<Product | undefined>;
   deleteProduct(id: string): Promise<void>;
   updateStock(id: string, quantity: number): Promise<void>;
+  restoreStock(id: string, quantity: number): Promise<void>;
 
   // Sales
   getAllSales(): Promise<Sale[]>;
   getSalesByUser(userId: string): Promise<Sale[]>;
+  getSaleById(id: string): Promise<Sale | undefined>;
   createSale(sale: InsertSale): Promise<Sale>;
+  getSaleReturnsCountLast2Days(userId: string): Promise<number>;
+  createSaleReturn(return_: InsertSaleReturn): Promise<SaleReturn>;
 
   // Notifications
   getNotificationsByUser(userId: string | null): Promise<Notification[]>;
@@ -177,6 +182,12 @@ export class DatabaseStorage implements IStorage {
       .where(eq(products.id, id));
   }
 
+  async restoreStock(id: string, quantity: number): Promise<void> {
+    await db.update(products)
+      .set({ stock: sql`${products.stock} + ${quantity}` })
+      .where(eq(products.id, id));
+  }
+
   // SALES
   async getAllSales(): Promise<Sale[]> {
     return await db.select().from(sales).orderBy(desc(sales.createdAt));
@@ -184,6 +195,11 @@ export class DatabaseStorage implements IStorage {
 
   async getSalesByUser(userId: string): Promise<Sale[]> {
     return await db.select().from(sales).where(eq(sales.userId, userId)).orderBy(desc(sales.createdAt));
+  }
+
+  async getSaleById(id: string): Promise<Sale | undefined> {
+    const [sale] = await db.select().from(sales).where(eq(sales.id, id)).limit(1);
+    return sale;
   }
 
   async createSale(sale: InsertSale & { preview?: any }): Promise<Sale> {
@@ -199,6 +215,24 @@ export class DatabaseStorage implements IStorage {
     }
     
     return newSale;
+  }
+
+  async getSaleReturnsCountLast2Days(userId: string): Promise<number> {
+    const twoDaysAgo = new Date();
+    twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+    const rows = await db.select().from(saleReturns)
+      .where(
+        and(
+          eq(saleReturns.userId, userId),
+          sql`${saleReturns.createdAt} >= ${twoDaysAgo.toISOString()}`
+        )
+      );
+    return rows.length;
+  }
+
+  async createSaleReturn(return_: InsertSaleReturn): Promise<SaleReturn> {
+    const [r] = await db.insert(saleReturns).values(return_).returning();
+    return r;
   }
 
   // NOTIFICATIONS

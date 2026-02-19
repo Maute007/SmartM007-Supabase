@@ -1,6 +1,6 @@
 import { useAuth } from '@/lib/auth';
 import { useCart } from '@/lib/cart';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
@@ -8,9 +8,11 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Search, ShoppingCart, Trash2, Plus, Minus, CreditCard, Banknote, QrCode, AlertCircle, ShoppingBag, ArrowRight, Percent, Scale, Check, LayoutGrid, List } from 'lucide-react';
-import { formatCurrency } from '@/lib/utils';
-import { Product, productsApi, categoriesApi, salesApi } from '@/lib/api';
+import { Checkbox } from "@/components/ui/checkbox";
+import { Search, ShoppingCart, Trash2, Plus, Minus, CreditCard, Banknote, QrCode, AlertCircle, ShoppingBag, ArrowRight, Percent, Scale, Check, LayoutGrid, List, Printer } from 'lucide-react';
+import { formatCurrency, cn } from '@/lib/utils';
+import { Product, productsApi, categoriesApi, salesApi, receiptSettingsApi } from '@/lib/api';
+import { useReceiptPrint } from '@/hooks/useReceiptPrint';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from '@/hooks/use-toast';
 
@@ -29,16 +31,31 @@ export default function POS() {
     queryFn: categoriesApi.getAll
   });
 
+  const { data: receiptSettings } = useQuery({
+    queryKey: ['/api/settings/receipt'],
+    queryFn: () => receiptSettingsApi.get().catch(() => ({ paperSize: '80x80' as const, printOnConfirm: false }))
+  });
+
+  const { printAndSaveReceipt } = useReceiptPrint();
+
   const createSaleMutation = useMutation({
     mutationFn: salesApi.create,
-    onSuccess: () => {
+    onSuccess: async (newSale) => {
+      const shouldPrint = printReceiptRef.current;
+      if (shouldPrint && newSale?.id) {
+        try {
+          await printAndSaveReceipt(newSale.id);
+          toast({ title: "Sucesso", description: "Venda registrada! Recibo impresso e guardado." });
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : "Erro ao imprimir/guardar recibo";
+          toast({ variant: "destructive", title: "Aviso", description: `Venda registrada. ${msg}` });
+        }
+      } else {
+        toast({ title: "Sucesso", description: "Venda registrada com sucesso!" });
+      }
       clearCart();
       queryClient.invalidateQueries({ queryKey: ['/api/products'] });
       queryClient.invalidateQueries({ queryKey: ['/api/sales'] });
-      toast({ 
-        title: "Sucesso", 
-        description: "Venda registrada com sucesso!" 
-      });
       setCheckoutOpen(false);
       setActiveDiscount({ type: 'none', value: 0 });
       setAmountReceived(0);
@@ -67,6 +84,8 @@ export default function POS() {
   const [discountType, setDiscountType] = useState<'percentage' | 'fixed'>('percentage');
   const [activeDiscount, setActiveDiscount] = useState({ type: 'none', value: 0 });
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
+  const [printReceiptOnConfirm, setPrintReceiptOnConfirm] = useState(false);
+  const printReceiptRef = useRef(false);
 
   const canApplyDiscount = user?.role === 'admin' || user?.role === 'manager';
 
@@ -179,11 +198,13 @@ export default function POS() {
       toast({ title: "Erro", description: "Valor insuficiente para completar a venda", variant: "destructive" });
       return;
     }
+    setPrintReceiptOnConfirm(receiptSettings?.printOnConfirm ?? false);
     setSelectedPaymentMethod(method);
     setShowPreviewConfirm(true);
   };
 
   const handleConfirmPreview = () => {
+    printReceiptRef.current = printReceiptOnConfirm;
     setShowPreviewConfirm(false);
     confirmSale();
   };
@@ -238,17 +259,17 @@ export default function POS() {
   }
 
   return (
-    <div className="h-[calc(100vh-8rem)] flex flex-col lg:flex-row gap-3 lg:gap-6 p-2 lg:p-4">
-      {/* MOBILE: Abas */}
-      <div className="lg:hidden">
-        <div className="flex gap-2 mb-4">
+    <div className="h-[calc(100dvh-4rem)] md:h-[calc(100vh-8rem)] flex flex-col lg:flex-row gap-3 lg:gap-6 p-3 lg:p-4">
+      {/* MOBILE: Tabs Produtos / Carrinho */}
+      <div className="lg:hidden shrink-0">
+        <div className="flex gap-2">
           <Button 
             variant="outline"
-            className="flex-1 rounded-xl bg-gradient-to-r from-emerald-50 to-emerald-100 border-emerald-200 hover:bg-emerald-100"
+            className="flex-1 h-12 rounded-xl border-2 font-semibold"
             onClick={() => setSelectedCategory(cart.length > 0 ? 'all' : selectedCategory)}
             data-testid="button-tab-produtos"
           >
-            <ShoppingBag className="h-4 w-4 mr-2" />
+            <ShoppingBag className="h-5 w-5 mr-2" />
             Produtos
           </Button>
           {cart.length > 0 && (
@@ -256,10 +277,10 @@ export default function POS() {
               <DialogTrigger asChild>
                 <Button 
                   variant="default"
-                  className="flex-1 rounded-xl bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 shadow-lg"
+                  className="flex-1 h-12 rounded-xl bg-primary hover:bg-primary/90 shadow-lg font-semibold"
                   data-testid="button-tab-carrinho"
                 >
-                  <ShoppingCart className="h-4 w-4 mr-2" />
+                  <ShoppingCart className="h-5 w-5 mr-2" />
                   Carrinho ({cartCount})
                 </Button>
               </DialogTrigger>
@@ -383,7 +404,7 @@ export default function POS() {
       </div>
 
       {/* Produtos - Desktop sempre, Mobile em aba */}
-      <div className="flex-1 flex flex-col min-w-0 bg-card rounded-xl border border-border shadow-sm overflow-hidden lg:block">
+      <div className="flex-1 flex flex-col min-w-0 min-h-0 bg-card rounded-xl border border-border shadow-sm overflow-hidden lg:block">
         <div className="p-3 lg:p-4 border-b border-border space-y-3">
           <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
             <Button 
@@ -407,17 +428,17 @@ export default function POS() {
             ))}
           </div>
           <div className="flex gap-2">
-            <div className="relative flex-1">
+            <div className="relative flex-1 min-w-0">
               <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input 
                 placeholder="Buscar por nome ou código..." 
-                className="pl-9 bg-muted/30 text-sm"
+                className="pl-9 bg-muted/30 text-sm h-10"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 data-testid="input-search-products"
               />
             </div>
-            <div className="flex border rounded-md">
+            <div className="hidden sm:flex border rounded-md shrink-0">
               <Button
                 variant={viewMode === 'list' ? 'default' : 'ghost'}
                 size="icon"
@@ -440,7 +461,7 @@ export default function POS() {
           </div>
         </div>
 
-        <ScrollArea className="flex-1 p-3 lg:p-4">
+        <ScrollArea className={cn("flex-1 p-3 lg:p-4", cart.length > 0 && "pb-24")}>
           {viewMode === 'list' ? (
             <div className="space-y-2">
               {filteredProducts.map(product => {
@@ -451,7 +472,7 @@ export default function POS() {
                 return (
                   <div 
                     key={product.id} 
-                    className={`flex items-center gap-3 p-3 bg-card rounded-lg border cursor-pointer transition-all ${parsedStock <= 0 ? 'opacity-50 pointer-events-none' : 'hover:border-primary/50 hover:shadow-md active:scale-[0.99]'}`}
+                    className={`flex items-center gap-3 p-3 sm:p-3 bg-card rounded-xl border cursor-pointer transition-all min-h-[72px] lg:min-h-0 ${parsedStock <= 0 ? 'opacity-50 pointer-events-none' : 'hover:border-primary/50 hover:shadow-md active:scale-[0.99]'}`}
                     onClick={() => parsedStock > 0 && handleAddProduct(product)}
                     data-testid={`card-product-${product.id}`}
                   >
@@ -507,7 +528,7 @@ export default function POS() {
               })}
             </div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 lg:gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 lg:gap-4">
               {filteredProducts.map(product => {
                 const parsedStock = parseFloat(product.stock);
                 const parsedMinStock = parseFloat(product.minStock);
@@ -563,6 +584,26 @@ export default function POS() {
           )}
         </ScrollArea>
       </div>
+
+      {/* MOBILE: Barra inferior fixa com resumo do carrinho */}
+      {cart.length > 0 && (
+        <div className="lg:hidden fixed bottom-0 left-0 right-0 z-40 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] bg-background/95 backdrop-blur-md border-t border-border shadow-[0_-4px_20px_rgba(0,0,0,0.08)]">
+          <div className="max-w-2xl mx-auto flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-medium text-muted-foreground">{cartCount} {cartCount === 1 ? 'item' : 'itens'}</p>
+              <p className="text-lg font-bold text-foreground">{formatCurrency(cartTotal)}</p>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={() => clearCart()} className="shrink-0">
+                Limpar
+              </Button>
+              <Button className="bg-primary shrink-0 font-semibold px-6" onClick={() => { setCheckoutOpen(true); openCheckout(); }}>
+                Finalizar <ArrowRight className="h-4 w-4 ml-2" />
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="hidden lg:flex w-full lg:w-[420px] bg-gradient-to-b from-orange-50 to-orange-100/50 rounded-xl border border-orange-200 shadow-2xl flex-col h-full">
         <div className="p-4 border-b border-orange-200 bg-gradient-to-r from-orange-500 to-orange-600 rounded-t-xl">
@@ -817,6 +858,30 @@ export default function POS() {
                 <span>Total a Pagar</span>
                 <span className="text-primary">{formatCurrency(cartTotal)}</span>
               </div>
+            </div>
+
+            {/* Imprimir recibo - destaque profissional */}
+            <div className={cn(
+              "rounded-xl p-4 flex items-center gap-4 transition-all",
+              printReceiptOnConfirm
+                ? "bg-primary/15 border-2 border-primary shadow-md shadow-primary/10"
+                : "bg-primary/5 border-2 border-primary/30 hover:border-primary/50"
+            )}>
+              <div className={cn(
+                "flex h-12 w-12 shrink-0 items-center justify-center rounded-xl",
+                printReceiptOnConfirm ? "bg-primary text-primary-foreground" : "bg-muted"
+              )}>
+                <Printer className="h-6 w-6" />
+              </div>
+              <label className="flex flex-1 cursor-pointer items-center gap-3">
+                <Checkbox
+                  id="print-receipt"
+                  checked={printReceiptOnConfirm}
+                  onCheckedChange={(v) => setPrintReceiptOnConfirm(v === true)}
+                  className="h-5 w-5 rounded-md border-2 data-[state=checked]:bg-primary"
+                />
+                <span className="text-base font-semibold">Imprimir recibo ao confirmar</span>
+              </label>
             </div>
 
             {/* Método e Pagamento */}

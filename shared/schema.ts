@@ -173,3 +173,15 @@ export const orderReopens = pgTable("order_reopens", {
 export const insertOrderReopenSchema = createInsertSchema(orderReopens).omit({ id: true, createdAt: true });
 export type InsertOrderReopen = z.infer<typeof insertOrderReopenSchema>;
 export type OrderReopen = typeof orderReopens.$inferSelect;
+
+// SALE RETURNS (devoluções — vendedor: máx 5 em 2 dias)
+export const saleReturns = pgTable("sale_returns", {
+  id: serial("id").primaryKey(),
+  saleId: varchar("sale_id").notNull().references(() => sales.id),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertSaleReturnSchema = createInsertSchema(saleReturns).omit({ id: true, createdAt: true });
+export type InsertSaleReturn = z.infer<typeof insertSaleReturnSchema>;
+export type SaleReturn = typeof saleReturns.$inferSelect;

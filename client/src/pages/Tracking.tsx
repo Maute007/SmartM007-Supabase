@@ -3,10 +3,11 @@ import { useAuth } from '@/lib/auth';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { toast } from '@/hooks/use-toast';
-import { Download, Search, Calendar } from 'lucide-react';
-import { formatCurrency } from '@/lib/utils';
+import { Download, Search } from 'lucide-react';
+import { format } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
+import { formatAuditLog } from '@/lib/auditFormat';
 
 interface AuditLog {
   id: number;
@@ -27,10 +28,18 @@ interface User {
 export default function Tracking() {
   const { user } = useAuth();
   const [selectedUserId, setSelectedUserId] = useState(user?.id || '');
-  const [startDate, setStartDate] = useState(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
-  const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
+  const today = new Date().toISOString().split('T')[0];
+  const lastWeek = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+  const now = new Date();
+  const currentHour = now.getHours();
+
+  const [startDate, setStartDate] = useState(lastWeek);
+  const [endDate, setEndDate] = useState(today);
   const [startHour, setStartHour] = useState<number | undefined>();
   const [endHour, setEndHour] = useState<number | undefined>();
+
+  const maxStartHour = startDate === today ? currentHour : 23;
+  const maxEndHour = endDate === today ? currentHour : 23;
   const [filteredLogs, setFilteredLogs] = useState<AuditLog[]>([]);
   const [showResults, setShowResults] = useState(false);
 
@@ -141,8 +150,13 @@ export default function Tracking() {
               <label className="block text-sm font-medium mb-2">Data Inicial</label>
               <input
                 type="date"
+                max={today}
                 value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setStartDate(v);
+                  if (v > endDate) setEndDate(v);
+                }}
                 className="w-full px-3 py-2 border border-emerald-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
               />
             </div>
@@ -150,38 +164,52 @@ export default function Tracking() {
               <label className="block text-sm font-medium mb-2">Data Final</label>
               <input
                 type="date"
+                min={startDate}
+                max={today}
                 value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setEndDate(v);
+                  if (v < startDate) setStartDate(v);
+                }}
                 className="w-full px-3 py-2 border border-emerald-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
               />
             </div>
           </div>
 
-          {/* Hora (Opcional) */}
+          {/* Hora (Opcional) — não permite horas futuras */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium mb-2">Hora Inicial (Opcional)</label>
+              <label className="block text-sm font-medium mb-2">Hora Inicial (opcional)</label>
               <input
                 type="number"
-                min="0"
-                max="23"
+                min={0}
+                max={maxStartHour}
                 value={startHour !== undefined ? startHour : ''}
-                onChange={(e) => setStartHour(e.target.value ? parseInt(e.target.value) : undefined)}
-                placeholder="00-23"
+                onChange={(e) => {
+                  const v = e.target.value ? parseInt(e.target.value, 10) : undefined;
+                  setStartHour(v != null && !isNaN(v) ? Math.min(Math.max(0, v), maxStartHour) : undefined);
+                }}
+                placeholder={`0–${maxStartHour}`}
                 className="w-full px-3 py-2 border border-emerald-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
               />
+              {startDate === today && <p className="text-xs text-muted-foreground mt-1">Máx. {currentHour}h (agora)</p>}
             </div>
             <div>
-              <label className="block text-sm font-medium mb-2">Hora Final (Opcional)</label>
+              <label className="block text-sm font-medium mb-2">Hora Final (opcional)</label>
               <input
                 type="number"
-                min="0"
-                max="23"
+                min={startHour ?? 0}
+                max={maxEndHour}
                 value={endHour !== undefined ? endHour : ''}
-                onChange={(e) => setEndHour(e.target.value ? parseInt(e.target.value) : undefined)}
-                placeholder="00-23"
+                onChange={(e) => {
+                  const v = e.target.value ? parseInt(e.target.value, 10) : undefined;
+                  setEndHour(v != null && !isNaN(v) ? Math.min(Math.max(startHour ?? 0, v), maxEndHour) : undefined);
+                }}
+                placeholder={`0–${maxEndHour}`}
                 className="w-full px-3 py-2 border border-emerald-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
               />
+              {endDate === today && <p className="text-xs text-muted-foreground mt-1">Máx. {currentHour}h (agora)</p>}
             </div>
           </div>
 
@@ -210,46 +238,42 @@ export default function Tracking() {
 
       {/* Resultados */}
       {showResults && (
-        <Card className="border-emerald-100">
+        <Card>
           <CardHeader>
             <CardTitle>Resultados ({filteredLogs.length} registros)</CardTitle>
+            <CardDescription>Histórico de atividades em linguagem clara</CardDescription>
           </CardHeader>
           <CardContent>
             {filteredLogs.length === 0 ? (
-              <p className="text-muted-foreground text-center py-8">Nenhum registro encontrado para o período selecionado</p>
+              <p className="text-muted-foreground text-center py-12">Nenhum registro encontrado para o período selecionado</p>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-slate-100 border-b">
-                    <tr>
-                      <th className="px-4 py-2 text-left font-semibold">Data/Hora</th>
-                      <th className="px-4 py-2 text-left font-semibold">Ação</th>
-                      <th className="px-4 py-2 text-left font-semibold">Tipo</th>
-                      <th className="px-4 py-2 text-left font-semibold">ID Entidade</th>
-                      <th className="px-4 py-2 text-left font-semibold">Detalhes</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredLogs.map((log) => (
-                      <tr key={log.id} className="border-b hover:bg-slate-50">
-                        <td className="px-4 py-3 text-xs whitespace-nowrap">
-                          {new Date(log.createdAt).toLocaleString('pt-BR')}
-                        </td>
-                        <td className="px-4 py-3 font-medium text-emerald-600">{log.action}</td>
-                        <td className="px-4 py-3 text-gray-600">{log.entityType}</td>
-                        <td className="px-4 py-3 text-xs font-mono text-gray-500">{log.entityId || '-'}</td>
-                        <td className="px-4 py-3 text-xs">
-                          <details className="cursor-pointer">
-                            <summary className="text-emerald-600 hover:underline">Ver detalhes</summary>
-                            <pre className="mt-2 p-2 bg-gray-100 rounded text-xs overflow-auto max-h-40">
-                              {JSON.stringify(log.details || {}, null, 2)}
-                            </pre>
-                          </details>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div className="space-y-3">
+                {filteredLogs.map((log) => {
+                  const fmt = formatAuditLog(log.action, log.entityType ?? '', log.details);
+                  const logUser = users.find(u => u.id === log.userId);
+                  return (
+                    <div
+                      key={log.id}
+                      className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 p-4 rounded-lg border bg-card hover:bg-muted/30 transition-colors"
+                    >
+                      <div className="sm:w-40 shrink-0 text-sm text-muted-foreground">
+                        {format(new Date(log.createdAt), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-foreground">{fmt.actionLabel}</p>
+                        <p className="text-sm text-muted-foreground mt-0.5">
+                          {fmt.summary}
+                        </p>
+                        {fmt.detailsText && (
+                          <p className="text-xs text-muted-foreground mt-1">{fmt.detailsText}</p>
+                        )}
+                      </div>
+                      <div className="shrink-0 text-sm text-muted-foreground">
+                        por {logUser?.name ?? 'Sistema'}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </CardContent>

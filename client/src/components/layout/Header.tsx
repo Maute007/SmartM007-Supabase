@@ -26,8 +26,7 @@ export function Header({ onMenuClick }: HeaderProps) {
   const { data: notifications = [] } = useQuery({
     queryKey: ['notifications'],
     queryFn: notificationsApi.getAll,
-    enabled: !!user,
-    refetchInterval: 10000 // Refetch every 10 seconds for real-time feel
+    enabled: !!user
   });
 
   const markAsReadMutation = useMutation({
@@ -65,12 +64,12 @@ export function Header({ onMenuClick }: HeaderProps) {
   if (!user) return null;
 
   return (
-    <header className="h-16 bg-background/80 backdrop-blur-md border-b border-border sticky top-0 z-10 px-4 flex items-center justify-between md:justify-end gap-4">
-      <Button variant="ghost" size="icon" className="md:hidden" onClick={onMenuClick}>
+    <header className="h-16 bg-background/80 backdrop-blur-md border-b border-border sticky top-0 z-10 px-4 flex items-center justify-between gap-4">
+      <Button variant="ghost" size="icon" className="md:hidden shrink-0" onClick={onMenuClick}>
         <Menu className="h-5 w-5" />
       </Button>
 
-      <div className="hidden md:flex items-center max-w-md w-full mr-auto">
+      <div className="hidden md:flex items-center flex-1 max-w-md">
         <div className="relative w-full">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input 

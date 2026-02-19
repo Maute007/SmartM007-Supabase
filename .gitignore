@@ -11,6 +11,10 @@ server/public
 .env.production
 .env.*.local
 
+# Recibos e dados locais
+receipts/
+data/
+
 # Sistema
 .DS_Store
 *.tar.gz

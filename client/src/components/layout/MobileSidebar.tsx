@@ -9,13 +9,15 @@ import {
   Settings, 
   CheckSquare, 
   LogOut, 
-  Store,
   X,
-  Boxes
+  Boxes,
+  FileText,
+  History
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
 import { toast } from '@/hooks/use-toast';
+import { Logo } from '@/components/Logo';
 
 interface MobileSidebarProps {
   open: boolean;
@@ -54,48 +56,15 @@ export function MobileSidebar({ open, onOpenChange }: MobileSidebarProps) {
   };
 
   const navItems = [
-    { 
-      label: 'Dashboard', 
-      href: '/', 
-      icon: LayoutDashboard,
-      roles: ['admin', 'manager', 'seller'] 
-    },
-    { 
-      label: 'PDV (Vendas)', 
-      href: '/pos', 
-      icon: ShoppingCart,
-      roles: ['admin', 'manager', 'seller'] 
-    },
-    { 
-      label: 'Produtos', 
-      href: '/products', 
-      icon: Package,
-      roles: ['admin', 'manager'] 
-    },
-    { 
-      label: 'Pedidos', 
-      href: '/orders', 
-      icon: Boxes,
-      roles: ['admin', 'manager'] 
-    },
-    { 
-      label: 'Relatórios', 
-      href: '/reports', 
-      icon: BarChart3,
-      roles: ['admin', 'manager'] 
-    },
-    { 
-      label: 'Tarefas', 
-      href: '/tasks', 
-      icon: CheckSquare,
-      roles: ['admin', 'manager', 'seller'] 
-    },
-    { 
-      label: 'Configurações', 
-      href: '/settings', 
-      icon: Settings,
-      roles: ['admin'] 
-    },
+    { label: 'Dashboard', href: '/', icon: LayoutDashboard, roles: ['admin', 'manager'] as const },
+    { label: 'PDV (Vendas)', href: '/pos', icon: ShoppingCart, roles: ['admin', 'manager', 'seller'] as const },
+    { label: 'Histórico', href: '/sales-history', icon: FileText, roles: ['seller'] as const },
+    { label: 'Produtos', href: '/products', icon: Package, roles: ['admin', 'manager'] as const },
+    { label: 'Pedidos', href: '/orders', icon: Boxes, roles: ['admin', 'manager'] as const },
+    { label: 'Relatórios', href: '/reports', icon: BarChart3, roles: ['admin', 'manager'] as const },
+    { label: 'Tarefas', href: '/tasks', icon: CheckSquare, roles: ['admin', 'manager'] as const },
+    { label: 'Rastreamento', href: '/tracking', icon: History, roles: ['admin', 'manager'] as const },
+    { label: 'Configurações', href: '/settings', icon: Settings, roles: ['admin'] as const },
   ];
 
   const filteredNav = navItems.filter(item => item.roles.includes(role));
@@ -104,18 +73,8 @@ export function MobileSidebar({ open, onOpenChange }: MobileSidebarProps) {
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="left" className="p-0 w-72">
         <div className="flex flex-col h-full">
-          <div className="p-6 flex items-center justify-between border-b">
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 bg-primary rounded-lg flex items-center justify-center shadow-lg shadow-primary/20">
-                <Store className="h-6 w-6 text-primary-foreground" />
-              </div>
-              <div>
-                <h1 className="font-heading font-bold text-xl tracking-tight leading-none">
-                  SmartM007
-                </h1>
-                <span className="text-xs font-medium text-muted-foreground">Sistema de Vendas</span>
-              </div>
-            </div>
+          <div className="p-5 flex items-center justify-between gap-4 border-b">
+            <Logo variant="sidebar" className="h-14 max-w-[180px] flex-1 min-w-0" />
             <Button 
               variant="ghost" 
               size="icon" 

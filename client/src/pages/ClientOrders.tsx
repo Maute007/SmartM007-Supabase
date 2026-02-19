@@ -6,12 +6,13 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { ShoppingCart, Package, Phone, User, Plus, Minus, Check, Clock, X, Store, AlertCircle } from 'lucide-react';
+import { ShoppingCart, Package, Phone, User, Plus, Minus, Check, Clock, X, AlertCircle } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { formatCurrency } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { Product, Category } from '@/lib/api';
+import { Logo } from '@/components/Logo';
 
 interface CartItem {
   productId: string;
@@ -312,14 +313,8 @@ export default function ClientOrders() {
       <div className="min-h-screen bg-gradient-to-br from-emerald-500/10 via-orange-500/5 to-emerald-500/10 p-4">
         <div className="max-w-6xl mx-auto space-y-6">
         {/* Header */}
-        <div className="flex items-center gap-3">
-          <div className="h-12 w-12 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-xl flex items-center justify-center">
-            <Store className="h-6 w-6 text-white" />
-          </div>
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">M007System</h1>
-            <p className="text-sm text-muted-foreground">Consulte produtos e faça reservas</p>
-          </div>
+        <div className="flex items-center justify-center sm:justify-start py-4 px-4 rounded-xl bg-white/70 backdrop-blur-sm border border-white/90 shadow-sm">
+          <Logo variant="inline" />
         </div>
 
         {step === 'intro' && (
@@ -327,7 +322,7 @@ export default function ClientOrders() {
             {/* Como Funciona */}
             <Card className="border-emerald-200 bg-gradient-to-r from-emerald-50 to-orange-50">
               <CardHeader>
-                <CardTitle className="text-2xl">Como Funciona o M007System?</CardTitle>
+                <CardTitle className="text-2xl">Como Funciona?</CardTitle>
               </CardHeader>
               <CardContent className="space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

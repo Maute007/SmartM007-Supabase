@@ -24,7 +24,8 @@ import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YA
 import { format, subDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useQuery } from '@tanstack/react-query';
-import { salesApi, productsApi, usersApi, notificationsApi } from '@/lib/api';
+import { salesApi, productsApi, usersApi, notificationsApi, auditLogsApi } from '@/lib/api';
+import { formatAuditLog } from '@/lib/auditFormat';
 
 export default function Dashboard() {
   const { user } = useAuth();
@@ -59,6 +60,12 @@ export default function Dashboard() {
   const { data: notifications = [], isLoading: notificationsLoading } = useQuery({
     queryKey: ['/api/notifications'],
     queryFn: notificationsApi.getAll
+  });
+
+  const { data: auditLogs = [] } = useQuery({
+    queryKey: ['/api/audit-logs'],
+    queryFn: auditLogsApi.getAll,
+    enabled: user?.role === 'admin'
   });
 
   const totalSalesToday = sales
@@ -121,8 +128,55 @@ export default function Dashboard() {
     );
   }
 
+  const recentActions = auditLogs.slice(0, 10);
+
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
+      {/* Resumo de Últimas Ações — apenas Admin */}
+      {user?.role === 'admin' && recentActions.length > 0 && (
+        <Card className="border-0 shadow-xl bg-gradient-to-br from-slate-50 to-slate-100/80 overflow-hidden">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-xl flex items-center gap-2">
+              <Activity className="h-5 w-5 text-primary" />
+              Resumo das Últimas Ações
+            </CardTitle>
+            <CardDescription>Atividades recentes no sistema</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-2">
+              {recentActions.map((log) => {
+                const fmt = formatAuditLog(log.action, log.entityType ?? '', log.details);
+                const logUser = users.find(u => u.id === log.userId);
+                return (
+                  <div
+                    key={log.id}
+                    className="flex items-center justify-between gap-4 py-3 px-4 rounded-lg bg-background/80 border border-border/50 hover:border-primary/30 transition-colors"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium text-foreground truncate">{fmt.actionLabel}</p>
+                      <p className="text-sm text-muted-foreground truncate">{fmt.summary}</p>
+                    </div>
+                    <div className="shrink-0 flex items-center gap-3">
+                      <span className="text-xs text-muted-foreground hidden sm:inline">
+                        {logUser?.name ?? 'Sistema'}
+                      </span>
+                      <span className="text-xs text-muted-foreground whitespace-nowrap">
+                        {format(new Date(log.createdAt), "dd/MM HH:mm", { locale: ptBR })}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <Link href="/tracking">
+              <Button variant="ghost" className="w-full mt-3 text-primary">
+                Ver rastreamento completo
+              </Button>
+            </Link>
+          </CardContent>
+        </Card>
+      )}
+
       <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-primary/90 to-primary/70 p-8 md:p-12 text-primary-foreground shadow-2xl shadow-primary/20">
         <div className="absolute top-0 right-0 -mt-10 -mr-10 h-64 w-64 rounded-full bg-white/10 blur-3xl"></div>
         <div className="absolute bottom-0 left-0 -mb-10 -ml-10 h-40 w-40 rounded-full bg-black/10 blur-2xl"></div>
