@@ -469,14 +469,15 @@ export default function POS() {
                 const parsedMinStock = parseFloat(product.minStock);
                 const parsedPrice = parseFloat(product.price);
 
+                const isLowStock = parsedStock > 0 && parsedStock <= parsedMinStock;
                 return (
                   <div 
                     key={product.id} 
-                    className={`flex items-center gap-3 p-3 sm:p-3 bg-card rounded-xl border cursor-pointer transition-all min-h-[72px] lg:min-h-0 ${parsedStock <= 0 ? 'opacity-50 pointer-events-none' : 'hover:border-primary/50 hover:shadow-md active:scale-[0.99]'}`}
+                    className={`flex items-center gap-3 p-3 sm:p-3 rounded-xl border cursor-pointer transition-all min-h-[72px] lg:min-h-0 ${parsedStock <= 0 ? 'opacity-50 pointer-events-none bg-card' : isLowStock ? 'bg-amber-50/80 border-amber-300 hover:border-amber-400 hover:shadow-amber-200/50 hover:shadow-md active:scale-[0.99] ring-1 ring-amber-200/50' : 'bg-card hover:border-primary/50 hover:shadow-md active:scale-[0.99]'}`}
                     onClick={() => parsedStock > 0 && handleAddProduct(product)}
                     data-testid={`card-product-${product.id}`}
                   >
-                    <div className="h-14 w-14 rounded-lg bg-gradient-to-br from-emerald-50 to-emerald-100 flex items-center justify-center shrink-0 border border-emerald-200/50 relative overflow-hidden">
+                    <div className={`h-14 w-14 rounded-lg flex items-center justify-center shrink-0 border relative overflow-hidden ${isLowStock ? 'bg-gradient-to-br from-amber-100 to-amber-200 border-amber-300' : 'bg-gradient-to-br from-emerald-50 to-emerald-100 border-emerald-200/50'}`}>
                       {product.image ? (
                         <img src={product.image} alt={product.name} className="w-full h-full object-cover" />
                       ) : (
@@ -502,8 +503,8 @@ export default function POS() {
                             <Scale className="h-3 w-3 mr-1" /> Pesável
                           </Badge>
                         )}
-                        {parsedStock <= parsedMinStock && parsedStock > 0 && (
-                          <Badge className="text-[10px] h-5 bg-orange-500">Pouco estoque</Badge>
+                        {isLowStock && (
+                          <Badge className="text-[10px] h-5 bg-amber-600 text-white animate-pulse">⚠ Estoque baixo</Badge>
                         )}
                         <span className="text-[10px] text-muted-foreground ml-auto">
                           Est: {parsedStock.toFixed(product.unit === 'kg' ? 3 : 0)}
@@ -534,15 +535,16 @@ export default function POS() {
                 const parsedMinStock = parseFloat(product.minStock);
                 const parsedPrice = parseFloat(product.price);
 
+                const isLowStock = parsedStock > 0 && parsedStock <= parsedMinStock;
                 return (
                   <Card 
                     key={product.id} 
-                    className={`cursor-pointer transition-all hover:shadow-lg hover:border-primary/50 group ${parsedStock <= 0 ? 'opacity-50 pointer-events-none' : 'hover:scale-105 hover:-translate-y-1'} rounded-lg`}
+                    className={`cursor-pointer transition-all group rounded-lg ${parsedStock <= 0 ? 'opacity-50 pointer-events-none' : isLowStock ? 'bg-amber-50/90 border-amber-300 hover:border-amber-400 hover:shadow-amber-200/60 hover:shadow-lg hover:scale-[1.02] hover:-translate-y-0.5 ring-1 ring-amber-200' : 'hover:shadow-lg hover:border-primary/50 hover:scale-105 hover:-translate-y-1'}`}
                     onClick={() => parsedStock > 0 && handleAddProduct(product)}
                     data-testid={`card-product-${product.id}`}
                   >
                     <CardContent className="p-2 lg:p-3 space-y-2">
-                      <div className="aspect-square rounded-lg bg-gradient-to-br from-emerald-50 to-emerald-100 relative overflow-hidden border border-emerald-200/50">
+                      <div className={`aspect-square rounded-lg relative overflow-hidden border ${isLowStock ? 'bg-gradient-to-br from-amber-100 to-amber-200 border-amber-300' : 'bg-gradient-to-br from-emerald-50 to-emerald-100 border-emerald-200/50'}`}>
                         {product.image ? (
                           <img src={product.image} alt={product.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300" />
                         ) : (
@@ -550,9 +552,9 @@ export default function POS() {
                             {product.name.charAt(0).toUpperCase()}
                           </div>
                         )}
-                        {parsedStock <= parsedMinStock && parsedStock > 0 && (
-                          <Badge className="absolute top-2 right-2 text-[10px] px-1.5 h-5 bg-orange-500 hover:bg-orange-600">
-                            Pouco
+                        {isLowStock && (
+                          <Badge className="absolute top-2 right-2 text-[10px] px-1.5 h-5 bg-amber-600 text-white shadow-md">
+                            ⚠ Baixo
                           </Badge>
                         )}
                         {parsedStock <= 0 && (
@@ -915,7 +917,7 @@ export default function POS() {
             </Button>
             <Button 
               onClick={handleConfirmPreview}
-              className="w-full bg-green-600 hover:bg-green-700"
+              className="w-full bg-green-600 hover:bg-green-700 transition-all duration-300 hover:scale-[1.02] hover:shadow-lg active:scale-[0.98]"
             >
               <Check className="h-4 w-4 mr-2" />
               Confirmar e Pagar

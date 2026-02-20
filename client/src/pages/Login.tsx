@@ -63,16 +63,17 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-dvh min-h-screen bg-gradient-to-br from-emerald-500/20 via-orange-500/10 to-emerald-500/20 flex items-center justify-center p-4 sm:p-6 relative overflow-x-hidden">
+    <div className="min-h-dvh min-h-screen bg-gradient-to-br from-emerald-500/20 via-orange-500/10 to-emerald-500/20 flex items-center justify-center p-4 sm:p-6 relative overflow-x-hidden animate-fade-in">
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-40 -right-40 w-80 h-80 bg-emerald-400/20 rounded-full blur-3xl" />
-        <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-orange-400/15 rounded-full blur-3xl" />
+        <div className="absolute -top-40 -right-40 w-80 h-80 bg-emerald-400/20 rounded-full blur-3xl animate-glow-pulse" />
+        <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-orange-400/15 rounded-full blur-3xl animate-glow-pulse animation-delay-500" />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-emerald-300/10 rounded-full blur-3xl animate-float" />
       </div>
 
-      <Card className="w-full max-w-md shadow-2xl border-emerald-200/80 overflow-hidden relative">
+      <Card className="w-full max-w-md shadow-2xl border-emerald-200/80 overflow-hidden relative animate-scale-in hover-lift hover-glow transition-smooth">
         <CardHeader className="text-center pt-8 pb-4 sm:pt-10 sm:pb-6 px-6">
           <div className="flex justify-center px-4 py-6 sm:py-8 rounded-2xl bg-background/80">
-            <Logo variant="hero" />
+            <Logo variant="hero" className="animate-float" />
           </div>
           <p className="mt-4 sm:mt-5 text-lg sm:text-xl font-semibold text-center text-foreground">
             Sistema de Gestão e Vendas
@@ -134,7 +135,7 @@ export default function Login() {
             <Button 
               type="submit"
               data-testid="button-login"
-              className="w-full h-12 text-lg font-medium bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 shadow-lg shadow-emerald-500/20 transition-all duration-300 hover:scale-[1.02] hover:shadow-xl hover:shadow-emerald-500/30 active:scale-[0.99]" 
+              className="w-full h-12 text-lg font-medium bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 shadow-lg shadow-emerald-500/20 transition-all duration-300 hover:scale-[1.02] hover:shadow-xl hover:shadow-emerald-500/30 active:scale-[0.99] hover:-translate-y-0.5" 
               disabled={isSubmitting}
             >
               {isSubmitting ? 'Entrando...' : 'Entrar no Sistema'}

@@ -1,22 +1,20 @@
 import { useAuth } from '@/lib/auth';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { useState, useEffect } from 'react';
 import { 
   DollarSign, 
   ShoppingBag, 
   Package, 
   AlertTriangle, 
   TrendingUp,
-  ArrowRight,
-  Calendar,
   Users,
   Activity,
   Zap,
   Star,
   Bell,
-  ChevronLeft,
-  ChevronRight
+  Lightbulb,
+  Target,
+  Sparkles,
 } from 'lucide-react';
 import { Link } from 'wouter';
 import { formatCurrency } from '@/lib/utils';
@@ -24,23 +22,10 @@ import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YA
 import { format, subDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useQuery } from '@tanstack/react-query';
-import { salesApi, productsApi, usersApi, notificationsApi, auditLogsApi } from '@/lib/api';
-import { formatAuditLog } from '@/lib/auditFormat';
+import { salesApi, productsApi, usersApi, notificationsApi } from '@/lib/api';
 
 export default function Dashboard() {
   const { user } = useAuth();
-  const [slideIndex, setSlideIndex] = useState(0);
-  
-  // Auto-scroll carousel
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const container = document.querySelector('.scroll-smooth') as HTMLElement;
-      if (container) {
-        container.scrollBy({ left: 300, behavior: 'smooth' });
-      }
-    }, 4000); // Change slide every 4 seconds
-    return () => clearInterval(interval);
-  }, []);
 
   const { data: sales = [], isLoading: salesLoading } = useQuery({
     queryKey: ['/api/sales'],
@@ -60,12 +45,6 @@ export default function Dashboard() {
   const { data: notifications = [], isLoading: notificationsLoading } = useQuery({
     queryKey: ['/api/notifications'],
     queryFn: notificationsApi.getAll
-  });
-
-  const { data: auditLogs = [] } = useQuery({
-    queryKey: ['/api/audit-logs'],
-    queryFn: auditLogsApi.getAll,
-    enabled: user?.role === 'admin'
   });
 
   const totalSalesToday = sales
@@ -115,6 +94,38 @@ export default function Dashboard() {
     return { date: dateStr, total: daySales, orders: sales.filter(s => new Date(s.createdAt).toDateString() === date.toDateString()).length };
   });
 
+  // Insights para crescimento — dados derivados
+  const soldLast7Days = new Set(
+    sales
+      .filter(s => (Date.now() - new Date(s.createdAt).getTime()) / (1000 * 60 * 60 * 24) <= 7)
+      .flatMap(s => s.items.map(i => i.productId))
+  );
+  const productsNoSale7Days = products.filter(p => !soldLast7Days.has(p.id));
+  const urgentReorder = lowStockProducts.filter(p => topProducts.some(t => t.productId === p.id));
+  const avgDailySales = chartData.reduce((a, d) => a + d.total, 0) / 7;
+  const todayVsAvg = avgDailySales > 0 ? ((totalSalesToday - avgDailySales) / avgDailySales) * 100 : 0;
+
+  const insights: { type: 'urgent' | 'stale' | 'trend' | 'tip'; label: string; detail?: string }[] = [];
+  if (urgentReorder.length > 0) {
+    insights.push({ type: 'urgent', label: `${urgentReorder.length} produto(s) em falta que vendem bem`, detail: 'Repor prioritário para não perder vendas' });
+  }
+  if (productsNoSale7Days.length > 0 && productsNoSale7Days.length <= 20) {
+    insights.push({ type: 'stale', label: `${productsNoSale7Days.length} produto(s) sem venda há 7 dias`, detail: 'Considere promoção ou reposicionamento' });
+  } else if (productsNoSale7Days.length > 20) {
+    insights.push({ type: 'stale', label: `${productsNoSale7Days.length} produtos parados`, detail: 'Avalie descontinuação ou oferta' });
+  }
+  if (todayVsAvg > 15) {
+    insights.push({ type: 'trend', label: 'Hoje está acima da média semanal', detail: `+${todayVsAvg.toFixed(0)}% em relação à média` });
+  } else if (todayVsAvg < -20 && totalOrdersToday > 0) {
+    insights.push({ type: 'trend', label: 'Hoje abaixo da média', detail: `${todayVsAvg.toFixed(0)}% — bom momento para promoções` });
+  }
+  if (lowStockCount === 0 && products.length > 0) {
+    insights.push({ type: 'tip', label: 'Estoque em dia', detail: 'Bom momento para negociar com fornecedores' });
+  }
+  if (insights.length === 0) {
+    insights.push({ type: 'tip', label: 'Mantenha o ritmo', detail: 'Analise os relatórios para oportunidades' });
+  }
+
   const isLoading = salesLoading || productsLoading || usersLoading || notificationsLoading;
 
   if (isLoading) {
@@ -128,78 +139,41 @@ export default function Dashboard() {
     );
   }
 
-  const recentActions = auditLogs.slice(0, 10);
+  const statsCards = [
+    { title: 'Vendas Hoje', value: formatCurrency(totalSalesToday), icon: DollarSign, color: 'emerald', borderColor: 'border-l-emerald-500', iconBg: 'bg-emerald-500/10', iconColor: 'text-emerald-600' },
+    { title: 'Pedidos', value: totalOrdersToday, icon: ShoppingBag, color: 'blue', borderColor: 'border-l-blue-500', iconBg: 'bg-blue-500/10', iconColor: 'text-blue-600' },
+    { title: 'Alertas', value: lowStockCount, icon: AlertTriangle, color: 'amber', borderColor: 'border-l-amber-500', iconBg: 'bg-amber-500/10', iconColor: 'text-amber-600' },
+    { title: 'Equipe', value: activeUsers, icon: Users, color: 'violet', borderColor: 'border-l-violet-500', iconBg: 'bg-violet-500/10', iconColor: 'text-violet-600' },
+  ];
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500">
-      {/* Resumo de Últimas Ações — apenas Admin */}
-      {user?.role === 'admin' && recentActions.length > 0 && (
-        <Card className="border-0 shadow-xl bg-gradient-to-br from-slate-50 to-slate-100/80 overflow-hidden">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-xl flex items-center gap-2">
-              <Activity className="h-5 w-5 text-primary" />
-              Resumo das Últimas Ações
-            </CardTitle>
-            <CardDescription>Atividades recentes no sistema</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-2">
-              {recentActions.map((log) => {
-                const fmt = formatAuditLog(log.action, log.entityType ?? '', log.details);
-                const logUser = users.find(u => u.id === log.userId);
-                return (
-                  <div
-                    key={log.id}
-                    className="flex items-center justify-between gap-4 py-3 px-4 rounded-lg bg-background/80 border border-border/50 hover:border-primary/30 transition-colors"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <p className="font-medium text-foreground truncate">{fmt.actionLabel}</p>
-                      <p className="text-sm text-muted-foreground truncate">{fmt.summary}</p>
-                    </div>
-                    <div className="shrink-0 flex items-center gap-3">
-                      <span className="text-xs text-muted-foreground hidden sm:inline">
-                        {logUser?.name ?? 'Sistema'}
-                      </span>
-                      <span className="text-xs text-muted-foreground whitespace-nowrap">
-                        {format(new Date(log.createdAt), "dd/MM HH:mm", { locale: ptBR })}
-                      </span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            <Link href="/tracking">
-              <Button variant="ghost" className="w-full mt-3 text-primary">
-                Ver rastreamento completo
-              </Button>
-            </Link>
-          </CardContent>
-        </Card>
-      )}
-
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-primary/90 to-primary/70 p-8 md:p-12 text-primary-foreground shadow-2xl shadow-primary/20">
-        <div className="absolute top-0 right-0 -mt-10 -mr-10 h-64 w-64 rounded-full bg-white/10 blur-3xl"></div>
-        <div className="absolute bottom-0 left-0 -mb-10 -ml-10 h-40 w-40 rounded-full bg-black/10 blur-2xl"></div>
-        
+    <div className="space-y-8 animate-slide-up">
+      {/* Hero */}
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-primary via-primary/95 to-emerald-800 p-8 md:p-10 text-primary-foreground shadow-xl">
+        <div className="absolute top-0 right-0 -mt-10 -mr-10 h-64 w-64 rounded-full bg-white/10 blur-3xl animate-glow-pulse" />
+        <div className="absolute bottom-0 left-0 -mb-10 -ml-10 h-40 w-40 rounded-full bg-white/5 blur-2xl animate-float" />
         <div className="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-          <div className="space-y-2">
-            <h1 className="text-4xl font-heading font-bold tracking-tight">
+          <div>
+            <h1 className="text-3xl md:text-4xl font-heading font-bold tracking-tight">
               Bem-vindo, {user?.name.split(' ')[0]}! 👋
             </h1>
-            <p className="text-primary-foreground/80 text-lg max-w-xl">
-              Aqui está o resumo das atividades da sua mercearia hoje. 
-              Você tem <span className="font-bold bg-white/20 px-2 py-0.5 rounded-full">{lowStockCount} alertas</span> precisando de atenção.
+            <p className="mt-2 text-primary-foreground/90 text-base md:text-lg max-w-xl">
+              Resumo do dia — {lowStockCount > 0 ? (
+                <span className="font-semibold bg-amber-400/30 px-2 py-0.5 rounded">{lowStockCount} alertas</span>
+              ) : (
+                <span className="font-semibold bg-white/20 px-2 py-0.5 rounded">tudo ok</span>
+              )}
             </p>
           </div>
           <div className="flex gap-3">
             <Link href="/reports">
-              <Button variant="secondary" className="shadow-lg bg-white/10 hover:bg-white/20 text-white border-none backdrop-blur-sm">
+              <Button variant="secondary" className="bg-white/10 hover:bg-white/20 text-white border-0 shadow-lg transition-all duration-300 hover:scale-105 hover:-translate-y-0.5">
                 <Activity className="mr-2 h-4 w-4" />
-                Ver Relatórios
+                Relatórios
               </Button>
             </Link>
             <Link href="/pos">
-              <Button size="lg" className="shadow-xl bg-white text-primary hover:bg-white/90 font-bold border-none">
+              <Button size="lg" className="bg-white text-primary hover:bg-white/90 font-bold shadow-lg transition-all duration-300 hover:scale-105 hover:-translate-y-0.5">
                 <Zap className="mr-2 h-4 w-4 fill-current" />
                 Nova Venda
               </Button>
@@ -208,46 +182,79 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div className="relative">
-        <div className="flex gap-4 overflow-x-auto pb-4 scroll-smooth snap-x snap-mandatory">
-          {[
-            { title: 'Vendas Hoje', value: formatCurrency(totalSalesToday), icon: DollarSign, bg: 'green', trend: '+12.5%', test: 'text-sales-today' },
-            { title: 'Pedidos', value: totalOrdersToday, icon: ShoppingBag, bg: 'blue', trend: `+${Math.floor(Math.random() * 5)}`, test: 'text-orders-today' },
-            { title: 'Alertas Estoque', value: lowStockCount, icon: AlertTriangle, bg: 'red', trend: lowStockCount > 0 ? 'CRÍTICO' : 'Normal', test: 'text-low-stock' },
-            { title: 'Equipe Ativa', value: activeUsers, icon: Users, bg: 'orange', trend: 'Online', test: 'text-active-users' }
-          ].map((card, idx) => {
-            const Icon = card.icon;
-            const bgGradient = card.bg === 'green' ? 'from-green-50 to-green-100' : card.bg === 'blue' ? 'from-blue-50 to-blue-100' : card.bg === 'red' ? 'from-red-50 to-red-100' : 'from-orange-50 to-orange-100';
-            const iconBg = card.bg === 'green' ? 'bg-green-100 text-green-600' : card.bg === 'blue' ? 'bg-blue-100 text-blue-600' : card.bg === 'red' ? 'bg-red-100 text-red-600' : 'bg-orange-100 text-orange-600';
-            const bgDot = card.bg === 'green' ? 'bg-green-500/10' : card.bg === 'blue' ? 'bg-blue-500/10' : card.bg === 'red' ? 'bg-red-500/10' : 'bg-orange-500/10';
-            const bgDotHover = card.bg === 'green' ? 'group-hover:bg-green-500/20' : card.bg === 'blue' ? 'group-hover:bg-blue-500/20' : card.bg === 'red' ? 'group-hover:bg-red-500/20' : 'group-hover:bg-orange-500/20';
-            const trendBg = card.bg === 'red' && card.trend === 'CRÍTICO' ? 'text-red-600 bg-red-100' : card.bg === 'green' ? 'text-green-500 bg-green-100' : card.bg === 'blue' ? 'text-blue-500 bg-blue-100' : 'text-orange-500 bg-orange-100';
-            
-            return (
-              <Card key={idx} className={`relative overflow-hidden border-none shadow-lg bg-gradient-to-br ${bgGradient} hover:scale-[1.02] transition-transform duration-300 group flex-shrink-0 w-full sm:w-72 snap-start`}>
-                <div className={`absolute right-0 top-0 h-24 w-24 ${bgDot} rounded-bl-full -mr-4 -mt-4 transition-all ${bgDotHover}`}></div>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 relative z-10">
-                  <CardTitle className="text-sm font-medium text-muted-foreground">{card.title}</CardTitle>
-                  <div className={`h-8 w-8 rounded-full flex items-center justify-center ${iconBg}`}>
-                    <Icon className="h-4 w-4" />
+      {/* Cards de Estatísticas */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {statsCards.map((card, idx) => {
+          const Icon = card.icon;
+          const stagger = `stagger-${idx + 1}`;
+          return (
+            <Card
+              key={idx}
+              className={`overflow-hidden border-l-4 ${card.borderColor} bg-card shadow-md hover:shadow-lg hover:-translate-y-0.5 transition-all duration-300 ${stagger}`}
+              data-testid={idx === 0 ? 'text-sales-today' : idx === 2 ? 'text-low-stock' : undefined}
+            >
+              <CardContent className="p-5">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">{card.title}</p>
+                    <p className="text-2xl font-bold mt-1 text-foreground">{card.value}</p>
                   </div>
-                </CardHeader>
-                <CardContent className="relative z-10">
-                  <div className="text-3xl font-bold text-gray-800" data-testid={card.test}>{card.value}</div>
-                  <p className="text-xs text-muted-foreground mt-2 flex items-center gap-1">
-                    <span className={`${trendBg} font-bold flex items-center px-1.5 py-0.5 rounded-md`}>
-                      <TrendingUp className="h-3 w-3 mr-1" /> {card.trend}
-                    </span>
-                  </p>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
+                  <div className={`h-11 w-11 rounded-xl flex items-center justify-center ${card.iconBg} ${card.iconColor}`}>
+                    <Icon className="h-5 w-5" />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <Card className="border-none shadow-xl bg-gradient-to-br from-white to-red-50/30">
+      {/* Gráficos — largura total */}
+      <Card className="border-0 shadow-lg overflow-hidden bg-gradient-to-b from-white to-slate-50/50">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <TrendingUp className="h-5 w-5 text-primary" />
+              Desempenho Semanal
+            </CardTitle>
+            <CardDescription>Receita diária</CardDescription>
+          </CardHeader>
+          <CardContent className="pl-0 pt-0">
+            <div className="h-[280px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={chartData} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="colorTotal" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="hsl(150 60% 35%)" stopOpacity={0.5} />
+                      <stop offset="100%" stopColor="hsl(150 60% 35%)" stopOpacity={0.05} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(0,0,0,0.06)" />
+                  <XAxis dataKey="date" stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} />
+                  <YAxis stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(v) => `MT ${v}`} width={50} />
+                  <Tooltip
+                    contentStyle={{ borderRadius: '10px', border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.1)' }}
+                    formatter={(value: number) => [`MT ${value.toFixed(2)}`, 'Vendas']}
+                  />
+                  <Area type="monotone" dataKey="total" stroke="hsl(150 60% 35%)" strokeWidth={3} fill="url(#colorTotal)" />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="px-6 pb-4 pt-2">
+              <ResponsiveContainer width="100%" height={120}>
+                <BarChart data={chartData} layout="vertical" margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
+                  <XAxis type="number" hide />
+                  <YAxis type="category" dataKey="date" width={50} tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
+                  <Bar dataKey="orders" fill="hsl(150 60% 35%)" radius={[0, 4, 4, 0]} maxBarSize={12} />
+                  <Tooltip contentStyle={{ borderRadius: '8px' }} formatter={(v: number) => [v, 'Pedidos']} />
+                </BarChart>
+              </ResponsiveContainer>
+              <p className="text-xs text-muted-foreground text-center mt-1">Pedidos por dia</p>
+            </div>
+          </CardContent>
+        </Card>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <Card className="border-none shadow-xl bg-gradient-to-br from-white to-red-50/30 hover-lift transition-smooth">
           <CardHeader>
             <CardTitle className="text-lg font-bold flex items-center gap-2">
               <Bell className="h-5 w-5 text-red-500" />
@@ -260,7 +267,7 @@ export default function Dashboard() {
                 <p className="text-sm text-muted-foreground text-center py-4">Nenhum alerta de estoque</p>
               ) : (
                 lowStockProducts.map(p => (
-                  <div key={p.id} className="flex justify-between items-start p-2 bg-red-50 rounded-lg border border-red-200">
+                  <div key={p.id} className="flex justify-between items-start p-2 bg-red-50 rounded-lg border border-red-200 hover:shadow-md hover:scale-[1.01] transition-all duration-300">
                     <div className="flex-1">
                       <p className="text-sm font-medium text-gray-800">{p.name}</p>
                       <p className="text-xs text-red-600 font-bold">
@@ -277,7 +284,7 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card className="border-none shadow-xl bg-white/80 backdrop-blur-sm">
+        <Card className="border-none shadow-xl bg-white/80 backdrop-blur-sm hover-lift transition-smooth">
           <CardHeader>
             <CardTitle className="text-lg font-bold flex items-center gap-2">
               <Star className="h-5 w-5 text-yellow-500" />
@@ -287,7 +294,7 @@ export default function Dashboard() {
           <CardContent>
             <div className="space-y-3">
               {topProducts.map((p, idx) => (
-                <div key={p.productId} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
+                <div key={p.productId} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg hover:shadow-md hover:scale-[1.01] transition-all duration-300">
                   <div className="flex items-center gap-2 flex-1">
                     <span className="font-bold text-lg text-primary/60">#{idx + 1}</span>
                     <div>
@@ -303,121 +310,41 @@ export default function Dashboard() {
             </div>
           </CardContent>
         </Card>
-      </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <Card className="lg:col-span-2 border-none shadow-xl bg-white/80 backdrop-blur-sm">
+        <Card className="border-none shadow-xl bg-gradient-to-br from-white via-amber-50/30 to-orange-50/20 hover-lift transition-smooth border-l-4 border-l-amber-500">
           <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className="text-xl font-bold text-gray-800">Desempenho Semanal</CardTitle>
-                <CardDescription>Receita diária vs. meta esperada</CardDescription>
-              </div>
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" className="rounded-full text-xs h-7">7 Dias</Button>
-                <Button variant="ghost" size="sm" className="rounded-full text-xs h-7 text-muted-foreground">30 Dias</Button>
-              </div>
-            </div>
+            <CardTitle className="text-lg font-bold flex items-center gap-2">
+              <Lightbulb className="h-5 w-5 text-amber-600" />
+              Insights para Crescer
+            </CardTitle>
+            <CardDescription className="text-xs">Sugestões e pontos de atenção</CardDescription>
           </CardHeader>
-          <CardContent className="pl-0">
-            <div className="h-[350px] w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={chartData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="colorTotal" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="hsl(150 60% 35%)" stopOpacity={0.4}/>
-                      <stop offset="95%" stopColor="hsl(150 60% 35%)" stopOpacity={0}/>
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(0,0,0,0.05)" />
-                  <XAxis 
-                    dataKey="date" 
-                    stroke="#888888" 
-                    fontSize={12} 
-                    tickLine={false} 
-                    axisLine={false} 
-                    dy={10}
-                  />
-                  <YAxis 
-                    stroke="#888888" 
-                    fontSize={12} 
-                    tickLine={false} 
-                    axisLine={false} 
-                    tickFormatter={(value) => `MT ${value}`} 
-                    dx={-10}
-                  />
-                  <Tooltip 
-                    contentStyle={{ 
-                      backgroundColor: 'rgba(255, 255, 255, 0.95)', 
-                      border: 'none',
-                      borderRadius: '12px',
-                      boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)'
-                    }}
-                    formatter={(value: number) => [`MT ${value.toFixed(2)}`, 'Vendas']}
-                    labelStyle={{ color: '#666', marginBottom: '0.5rem' }}
-                  />
-                  <Area 
-                    type="monotone" 
-                    dataKey="total" 
-                    stroke="hsl(150 60% 35%)" 
-                    strokeWidth={4}
-                    fillOpacity={1} 
-                    fill="url(#colorTotal)" 
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
+          <CardContent>
+            <div className="space-y-3">
+              {insights.map((item, idx) => {
+                const style = item.type === 'urgent' ? 'bg-red-50 border-red-200 text-red-800' : item.type === 'stale' ? 'bg-amber-50 border-amber-200 text-amber-900' : item.type === 'trend' ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-slate-50 border-slate-200 text-slate-700';
+                const Icon = item.type === 'urgent' ? AlertTriangle : item.type === 'stale' ? Package : item.type === 'trend' ? TrendingUp : Sparkles;
+                return (
+                  <div key={idx} className={`flex gap-3 p-3 rounded-lg border transition-all hover:shadow-sm ${style}`}>
+                    <div className="shrink-0 mt-0.5">
+                      <Icon className="h-4 w-4 opacity-80" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium">{item.label}</p>
+                      {item.detail && <p className="text-xs opacity-90 mt-0.5">{item.detail}</p>}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
+            <Link href="/reports">
+              <Button variant="ghost" size="sm" className="w-full mt-3 text-amber-700 hover:bg-amber-100 text-xs">
+                <Target className="h-3.5 w-3.5 mr-1.5" />
+                Ver relatórios completos
+              </Button>
+            </Link>
           </CardContent>
         </Card>
-
-        <div className="space-y-6">
-          <Card className="border-none shadow-xl bg-white/80 backdrop-blur-sm h-full flex flex-col">
-            <CardHeader>
-              <CardTitle className="text-lg font-bold flex items-center gap-2">
-                <Activity className="h-5 w-5 text-primary" />
-                Feed de Atividades
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="flex-1 overflow-hidden relative">
-              <div className="absolute left-6 top-6 bottom-6 w-0.5 bg-gray-100"></div>
-              <div className="space-y-6 relative">
-                {notifications.slice(0, 4).map((notif, idx) => (
-                  <div key={notif.id} className="flex gap-4 items-start group">
-                    <div className={`relative z-10 mt-1 h-3 w-3 rounded-full shrink-0 ring-4 ring-white transition-all duration-300 group-hover:scale-125 ${
-                      notif.type === 'warning' ? 'bg-yellow-500' : 
-                      notif.type === 'success' ? 'bg-green-500' : 
-                      notif.type === 'error' ? 'bg-red-500' : 'bg-blue-500'
-                    }`} />
-                    <div className="space-y-1 bg-gray-50/50 p-3 rounded-lg flex-1 transition-colors group-hover:bg-gray-100">
-                      <p className="text-sm font-medium leading-snug text-gray-800">{notif.message}</p>
-                      <p className="text-xs text-muted-foreground font-mono">
-                        {format(new Date(notif.createdAt), "HH:mm", { locale: ptBR })}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-                
-                {sales.slice(0, 3).map((sale) => (
-                  <div key={sale.id} className="flex gap-4 items-start group">
-                    <div className="relative z-10 mt-1 h-3 w-3 rounded-full shrink-0 bg-primary ring-4 ring-white transition-all duration-300 group-hover:scale-125" />
-                    <div className="space-y-1 bg-gray-50/50 p-3 rounded-lg flex-1 transition-colors group-hover:bg-gray-100">
-                      <div className="flex justify-between items-start">
-                        <p className="text-sm font-medium text-gray-800">Venda #{sale.id.slice(-4)}</p>
-                        <span className="text-xs font-bold text-primary bg-primary/10 px-1.5 rounded">{formatCurrency(parseFloat(sale.total))}</span>
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        {sale.items.length} itens • {sale.paymentMethod === 'card' ? 'Cartão' : 'Dinheiro'}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-            <div className="p-4 border-t border-gray-100 bg-gray-50/50 rounded-b-xl">
-              <Button variant="ghost" className="w-full text-primary text-sm hover:bg-primary/5">Ver todo o histórico</Button>
-            </div>
-          </Card>
-        </div>
       </div>
     </div>
   );

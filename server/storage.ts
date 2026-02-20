@@ -362,7 +362,7 @@ export class DatabaseStorage implements IStorage {
     return newTask;
   }
 
-  async updateTask(id: string, updates: Partial<Pick<Task, 'completed'>>): Promise<Task | undefined> {
+  async updateTask(id: string, updates: Partial<Pick<Task, 'completed' | 'completionComment'>>): Promise<Task | undefined> {
     const [updated] = await db.update(tasks)
       .set(updates)
       .where(eq(tasks.id, id))

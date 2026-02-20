@@ -35,11 +35,12 @@ export default function Tracking() {
 
   const [startDate, setStartDate] = useState(lastWeek);
   const [endDate, setEndDate] = useState(today);
-  const [startHour, setStartHour] = useState<number | undefined>();
-  const [endHour, setEndHour] = useState<number | undefined>();
+  const [startTime, setStartTime] = useState<string>('');
+  const [endTime, setEndTime] = useState<string>('');
 
-  const maxStartHour = startDate === today ? currentHour : 23;
-  const maxEndHour = endDate === today ? currentHour : 23;
+  const maxTimeToday = `${String(currentHour).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  const startHour = startTime ? parseInt(startTime.split(':')[0], 10) : undefined;
+  const endHour = endTime ? parseInt(endTime.split(':')[0], 10) : undefined;
   const [filteredLogs, setFilteredLogs] = useState<AuditLog[]>([]);
   const [showResults, setShowResults] = useState(false);
 
@@ -114,14 +115,14 @@ export default function Tracking() {
   });
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-slide-up">
       <div>
         <h1 className="text-3xl font-bold">Rastreamento & Auditoria</h1>
         <p className="text-muted-foreground">Visualize o histórico completo de ações dos usuários com filtros por data e hora</p>
       </div>
 
       {/* Filtros */}
-      <Card className="border-emerald-200">
+      <Card className="border-emerald-200 hover-lift transition-smooth">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Search className="h-5 w-5 text-emerald-600" />
@@ -177,39 +178,38 @@ export default function Tracking() {
             </div>
           </div>
 
-          {/* Hora (Opcional) — não permite horas futuras */}
+          {/* Hora (Opcional) — inputs time nativos, não permite horários futuros */}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium mb-2">Hora Inicial (opcional)</label>
               <input
-                type="number"
-                min={0}
-                max={maxStartHour}
-                value={startHour !== undefined ? startHour : ''}
+                type="time"
+                max={startDate === endDate && endTime ? endTime : startDate === today ? maxTimeToday : undefined}
+                value={startTime}
                 onChange={(e) => {
-                  const v = e.target.value ? parseInt(e.target.value, 10) : undefined;
-                  setStartHour(v != null && !isNaN(v) ? Math.min(Math.max(0, v), maxStartHour) : undefined);
+                  const v = e.target.value;
+                  setStartTime(v);
+                  if (v && endTime && v > endTime) setEndTime(v);
                 }}
-                placeholder={`0–${maxStartHour}`}
                 className="w-full px-3 py-2 border border-emerald-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
               />
-              {startDate === today && <p className="text-xs text-muted-foreground mt-1">Máx. {currentHour}h (agora)</p>}
+              {startDate === today && <p className="text-xs text-muted-foreground mt-1">Máx. agora</p>}
             </div>
             <div>
               <label className="block text-sm font-medium mb-2">Hora Final (opcional)</label>
               <input
-                type="number"
-                min={startHour ?? 0}
-                max={maxEndHour}
-                value={endHour !== undefined ? endHour : ''}
+                type="time"
+                min={startDate === endDate && startTime ? startTime : undefined}
+                max={endDate === today ? maxTimeToday : undefined}
+                value={endTime}
                 onChange={(e) => {
-                  const v = e.target.value ? parseInt(e.target.value, 10) : undefined;
-                  setEndHour(v != null && !isNaN(v) ? Math.min(Math.max(startHour ?? 0, v), maxEndHour) : undefined);
+                  const v = e.target.value;
+                  setEndTime(v);
+                  if (v && startTime && v < startTime) setStartTime(v);
                 }}
-                placeholder={`0–${maxEndHour}`}
                 className="w-full px-3 py-2 border border-emerald-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
               />
-              {endDate === today && <p className="text-xs text-muted-foreground mt-1">Máx. {currentHour}h (agora)</p>}
+              {endDate === today && <p className="text-xs text-muted-foreground mt-1">Máx. agora</p>}
             </div>
           </div>
 
@@ -254,7 +254,7 @@ export default function Tracking() {
                   return (
                     <div
                       key={log.id}
-                      className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 p-4 rounded-lg border bg-card hover:bg-muted/30 transition-colors"
+                      className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 p-4 rounded-lg border bg-card hover:bg-muted/30 hover:shadow-md hover:translate-x-1 transition-all duration-300"
                     >
                       <div className="sm:w-40 shrink-0 text-sm text-muted-foreground">
                         {format(new Date(log.createdAt), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}

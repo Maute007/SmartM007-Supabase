@@ -505,7 +505,7 @@ export const tasksApi = {
     return res.json();
   },
 
-  update: async (id: string, data: { completed?: boolean }): Promise<Task> => {
+  update: async (id: string, data: { completed?: boolean; completionComment?: string }): Promise<Task> => {
     const res = await fetch(`${API_BASE}/tasks/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },

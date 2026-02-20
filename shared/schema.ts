@@ -127,6 +127,7 @@ export const tasks = pgTable("tasks", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   title: text("title").notNull(),
   completed: boolean("completed").default(false).notNull(),
+  completionComment: text("completion_comment"), // Comentário ao marcar como concluída
   assignedTo: text("assigned_to").notNull().$type<'all' | 'admin' | 'manager' | 'seller' | 'user'>(), // 'user' means specific user
   assignedToId: varchar("assigned_to_id").references(() => users.id), // Only used if assignedTo = 'user'
   createdBy: varchar("created_by").notNull().references(() => users.id),

@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Plus, Trash2, CheckSquare } from 'lucide-react';
+import { Plus, Trash2, CheckSquare, MessageSquare, User } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { toast } from '@/hooks/use-toast';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -12,6 +12,7 @@ import { tasksApi, usersApi } from '@/lib/api';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
 
 export default function Tasks() {
   const { user } = useAuth();
@@ -29,7 +30,7 @@ export default function Tasks() {
   const { data: users = [] } = useQuery({
     queryKey: ['users'],
     queryFn: usersApi.getAll,
-    enabled: !!user && user.role === 'admin',
+    enabled: !!user,
   });
 
   const createTaskMutation = useMutation({
@@ -54,8 +55,16 @@ export default function Tasks() {
   });
 
   const toggleTaskMutation = useMutation({
-    mutationFn: ({ id, completed }: { id: string; completed: boolean }) => 
-      tasksApi.update(id, { completed }),
+    mutationFn: ({ id, completed, completionComment }: { id: string; completed: boolean; completionComment?: string }) => 
+      tasksApi.update(id, { completed, completionComment }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tasks'] });
+    },
+  });
+
+  const updateCommentMutation = useMutation({
+    mutationFn: ({ id, completionComment }: { id: string; completionComment: string }) =>
+      tasksApi.update(id, { completionComment }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['tasks'] });
     },
@@ -99,8 +108,25 @@ export default function Tasks() {
     });
   };
 
+  const [commentDraft, setCommentDraft] = useState<Record<string, string>>({});
+  const [showCommentInput, setShowCommentInput] = useState<string | null>(null);
+
   const handleToggleTask = (id: string, completed: boolean) => {
-    toggleTaskMutation.mutate({ id, completed: !completed });
+    if (!completed) {
+      toggleTaskMutation.mutate({ id, completed: true });
+      setShowCommentInput(id);
+    } else {
+      toggleTaskMutation.mutate({ id, completed: false });
+      setShowCommentInput(null);
+      setCommentDraft(prev => ({ ...prev, [id]: '' }));
+    }
+  };
+
+  const handleSaveComment = (id: string, comment: string) => {
+    if (comment.trim()) {
+      updateCommentMutation.mutate({ id, completionComment: comment.trim() });
+    }
+    setShowCommentInput(null);
   };
 
   const handleDeleteTask = (id: string) => {
@@ -140,6 +166,7 @@ export default function Tasks() {
       </div>
 
       <Card className="border-emerald-200 shadow-lg">
+        {(user.role === 'admin' || user.role === 'manager') && (
         <CardHeader className="bg-gradient-to-r from-emerald-50 to-orange-50 border-b border-emerald-100 space-y-4">
           <div className="flex gap-2">
             <Input 
@@ -204,6 +231,7 @@ export default function Tasks() {
             )}
           </div>
         </CardHeader>
+        )}
         <CardContent className="p-0">
           {isLoading ? (
             <div className="p-8 text-center text-muted-foreground">
@@ -216,39 +244,80 @@ export default function Tasks() {
             </div>
           ) : (
             <div className="divide-y divide-border">
-              {tasks.map((task) => (
+              {tasks.map((task) => {
+                const creator = users.find(u => u.id === task.createdBy);
+                return (
                 <div 
                   key={task.id} 
                   data-testid={`task-${task.id}`}
-                  className="flex items-center p-4 hover:bg-muted/20 transition-colors group"
+                  className="p-4 hover:bg-muted/20 transition-colors group"
                 >
-                  <Checkbox 
-                    data-testid={`checkbox-${task.id}`}
-                    checked={task.completed} 
-                    onCheckedChange={() => handleToggleTask(task.id, task.completed)}
-                    className="mr-4"
-                  />
-                  <div className="flex-1">
-                    <p className={`font-medium ${task.completed ? 'line-through text-muted-foreground' : ''}`}>
-                      {task.title}
-                    </p>
-                    <div className="flex gap-2 mt-1">
-                      <Badge variant="secondary" className="text-[10px] h-5 px-1.5">
-                        {getAssignedToLabel(task)}
-                      </Badge>
+                  <div className="flex items-start gap-4">
+                    <Checkbox 
+                      data-testid={`checkbox-${task.id}`}
+                      checked={task.completed} 
+                      onCheckedChange={() => handleToggleTask(task.id, task.completed)}
+                      className="mt-1"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className={`font-medium ${task.completed ? 'line-through text-muted-foreground' : ''}`}>
+                        {task.title}
+                      </p>
+                      <div className="flex flex-wrap gap-2 mt-1 items-center">
+                        <Badge variant="secondary" className="text-[10px] h-5 px-1.5">
+                          {getAssignedToLabel(task)}
+                        </Badge>
+                        {(user.role === 'admin' || user.role === 'manager') && creator && (
+                          <span className="text-xs text-muted-foreground flex items-center gap-1">
+                            <User className="h-3 w-3" /> Atribuído por {creator.name}
+                          </span>
+                        )}
+                      </div>
+                      {task.completed && task.completionComment && (
+                        <div className="mt-2 p-2 rounded-lg bg-muted/50 text-sm flex items-start gap-2">
+                          <MessageSquare className="h-4 w-4 shrink-0 mt-0.5 text-muted-foreground" />
+                          <span className="text-muted-foreground">{task.completionComment}</span>
+                        </div>
+                      )}
+                      {task.completed && (showCommentInput === task.id || !task.completionComment) && (
+                        <div className="mt-2 space-y-2">
+                          <Textarea
+                            placeholder="Adicionar comentário (opcional)..."
+                            value={commentDraft[task.id] ?? task.completionComment ?? ''}
+                            onChange={(e) => setCommentDraft(prev => ({ ...prev, [task.id]: e.target.value }))}
+                            className="min-h-[60px] text-sm"
+                            onBlur={() => handleSaveComment(task.id, commentDraft[task.id] ?? task.completionComment ?? '')}
+                          />
+                          <Button size="sm" variant="outline" onClick={() => handleSaveComment(task.id, commentDraft[task.id] ?? task.completionComment ?? '')}>
+                            Guardar comentário
+                          </Button>
+                        </div>
+                      )}
+                      {task.completed && task.completionComment && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="mt-2 text-xs h-7"
+                          onClick={() => setShowCommentInput(showCommentInput === task.id ? null : task.id)}
+                        >
+                          {showCommentInput === task.id ? 'Ocultar' : 'Editar comentário'}
+                        </Button>
+                      )}
                     </div>
+                    {(user.role === 'admin' || user.role === 'manager') && (
+                    <Button 
+                      data-testid={`button-delete-${task.id}`}
+                      variant="ghost" 
+                      size="icon" 
+                      className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity shrink-0"
+                      onClick={() => handleDeleteTask(task.id)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                    )}
                   </div>
-                  <Button 
-                    data-testid={`button-delete-${task.id}`}
-                    variant="ghost" 
-                    size="icon" 
-                    className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity"
-                    onClick={() => handleDeleteTask(task.id)}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
                 </div>
-              ))}
+              );})}
             </div>
           )}
         </CardContent>

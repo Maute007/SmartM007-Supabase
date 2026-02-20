@@ -62,7 +62,7 @@ export function MobileSidebar({ open, onOpenChange }: MobileSidebarProps) {
     { label: 'Produtos', href: '/products', icon: Package, roles: ['admin', 'manager'] as const },
     { label: 'Pedidos', href: '/orders', icon: Boxes, roles: ['admin', 'manager'] as const },
     { label: 'Relatórios', href: '/reports', icon: BarChart3, roles: ['admin', 'manager'] as const },
-    { label: 'Tarefas', href: '/tasks', icon: CheckSquare, roles: ['admin', 'manager'] as const },
+    { label: 'Tarefas', href: '/tasks', icon: CheckSquare, roles: ['admin', 'manager', 'seller'] as const },
     { label: 'Rastreamento', href: '/tracking', icon: History, roles: ['admin', 'manager'] as const },
     { label: 'Configurações', href: '/settings', icon: Settings, roles: ['admin'] as const },
   ];

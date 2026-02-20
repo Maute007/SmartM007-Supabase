@@ -71,7 +71,7 @@ export function Sidebar({ collapsed: controlledCollapsed, onCollapsedChange }: S
     { label: 'Produtos', href: '/products', icon: Package, roles: ['admin', 'manager'] as const },
     { label: 'Pedidos', href: '/orders', icon: Boxes, roles: ['admin', 'manager'] as const },
     { label: 'Relatórios', href: '/reports', icon: BarChart3, roles: ['admin', 'manager'] as const },
-    { label: 'Tarefas', href: '/tasks', icon: CheckSquare, roles: ['admin', 'manager'] as const },
+    { label: 'Tarefas', href: '/tasks', icon: CheckSquare, roles: ['admin', 'manager', 'seller'] as const },
     { label: 'Rastreamento', href: '/tracking', icon: History, roles: ['admin', 'manager'] as const },
     { label: 'Configurações', href: '/settings', icon: Settings, roles: ['admin'] as const },
   ];
@@ -129,7 +129,7 @@ export function Sidebar({ collapsed: controlledCollapsed, onCollapsedChange }: S
               key={item.href} 
               href={item.href}
               className={cn(
-                "flex items-center gap-3 px-3 py-2.5 rounded-md transition-all duration-200 group no-underline",
+                "flex items-center gap-3 px-3 py-2.5 rounded-md transition-all duration-300 group no-underline hover:translate-x-1",
                 isActive 
                   ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-md shadow-primary/20 font-medium" 
                   : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"

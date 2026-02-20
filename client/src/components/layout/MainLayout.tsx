@@ -7,7 +7,7 @@ import { useAuth } from '@/lib/auth';
 import { Redirect, useLocation } from 'wouter';
 import { cn } from '@/lib/utils';
 
-const SELLER_ALLOWED = ['/pos', '/sales-history'];
+const SELLER_ALLOWED = ['/pos', '/sales-history', '/tasks'];
 
 export function MainLayout({ children }: { children: ReactNode }) {
   const { user, isLoading } = useAuth();
@@ -36,8 +36,9 @@ export function MainLayout({ children }: { children: ReactNode }) {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-secondary/30 flex items-center justify-center">
-        <div className="animate-pulse text-xl text-primary">Carregando...</div>
+      <div className="min-h-screen bg-secondary/30 flex flex-col items-center justify-center gap-4 animate-fade-in">
+        <div className="h-14 w-14 rounded-full border-4 border-primary/20 border-t-primary animate-spin" />
+        <p className="text-xl text-primary font-medium animate-pulse">Carregando...</p>
       </div>
     );
   }
@@ -61,7 +62,7 @@ export function MainLayout({ children }: { children: ReactNode }) {
       )}>
         <Header onMenuClick={() => setMobileMenuOpen(true)} />
         <div className="flex-1 p-4 md:p-6 overflow-y-auto h-[calc(100vh-4rem)]">
-          <div className="max-w-7xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <div className="max-w-7xl mx-auto animate-slide-up">
             {children}
           </div>
         </div>
