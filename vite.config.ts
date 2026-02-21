@@ -43,6 +43,9 @@ export default defineConfig({
   server: {
     host: "0.0.0.0",
     allowedHosts: true,
+    hmr: {
+      clientPort: parseInt(process.env.PORT || "9001", 10),
+    },
     fs: {
       strict: true,
       deny: ["**/.*"],

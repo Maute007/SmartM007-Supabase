@@ -2,7 +2,11 @@ import { type Server } from "node:http";
 
 import express, { type Express, type Request, Response, NextFunction } from "express";
 import session from "express-session";
+import connectPgSimple from "connect-pg-simple";
+import { pool } from "../db/index";
 import { registerRoutes } from "./routes";
+
+const PgSession = connectPgSimple(session);
 import { initializeDatabase } from "../db/init";
 
 export function log(message: string, source = "express") {
@@ -42,6 +46,7 @@ app.use((req, res, next) => {
 app.set('trust proxy', 1);
 
 app.use(express.json({
+  limit: '10mb',
   verify: (req, _res, buf) => {
     req.rawBody = buf;
   }
@@ -50,14 +55,19 @@ app.use(express.urlencoded({ extended: false }));
 
 app.use(
   session({
+    store: new PgSession({
+      pool,
+      tableName: 'session',
+      createTableIfMissing: true
+    }),
     secret: process.env.SESSION_SECRET || 'fresh-market-secret-key-2025',
     resave: false,
     saveUninitialized: true,
     cookie: {
-      secure: process.env.NODE_ENV === 'production' ? 'auto' : false,
+      secure: false, // false para funcionar em localhost HTTP
       httpOnly: true,
       sameSite: 'lax',
-      maxAge: 1000 * 60 * 60 * 24 * 7 // 7 days
+      maxAge: 1000 * 60 * 60 * 24 * 7 // 7 dias
     }
   })
 );

@@ -6,8 +6,8 @@ import { Input } from '@/components/ui/input';
 import { formatCurrency } from '@/lib/utils';
 import { format, startOfDay, subDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { salesApi, productsApi } from '@/lib/api';
-import { Undo2, Calendar, Filter, ChevronLeft, ChevronRight, Receipt } from 'lucide-react';
+import { salesApi, productsApi, receiptsApi } from '@/lib/api';
+import { Undo2, Calendar, Filter, ChevronLeft, ChevronRight, Receipt, FileText, Download } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import {
   AlertDialog,
@@ -161,7 +161,28 @@ export default function SalesHistory() {
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 flex-wrap">
+            <a
+              href={receiptsApi.getFileUrl(sale.id)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex"
+            >
+              <Button variant="outline" size="sm" className="text-primary border-primary/30 hover:bg-primary/10">
+                <FileText className="h-4 w-4 mr-1" />
+                Recibo
+              </Button>
+            </a>
+            <a
+              href={receiptsApi.getFileUrl(sale.id, true)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex"
+            >
+              <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground">
+                <Download className="h-4 w-4" />
+              </Button>
+            </a>
             <span className="text-xl font-bold text-primary">{formatCurrency(parseFloat(sale.total))}</span>
             {allowReturn && (
               <Button

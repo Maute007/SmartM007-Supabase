@@ -34,6 +34,7 @@ export type Category = typeof categories.$inferSelect;
 export const products = pgTable("products", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   sku: text("sku").notNull().unique(),
+  barcode: text("barcode"), // Código de barras (opcional, ex: EAN-13)
   name: text("name").notNull(),
   categoryId: varchar("category_id").references(() => categories.id),
   price: decimal("price", { precision: 10, scale: 2 }).notNull(),
@@ -98,11 +99,15 @@ export type Notification = typeof notifications.$inferSelect;
 // AUDIT LOG TABLE
 export const auditLogs = pgTable("audit_logs", {
   id: serial("id").primaryKey(),
-  userId: varchar("user_id").notNull().references(() => users.id),
-  action: text("action").notNull(), // "CREATE_PRODUCT", "UPDATE_PRODUCT", "DELETE_PRODUCT", "SALE", etc
-  entityType: text("entity_type").notNull(), // "product", "sale", "user", etc
+  userId: varchar("user_id").references(() => users.id), // nullable for LOGIN_FAILED etc
+  action: text("action").notNull(),
+  entityType: text("entity_type").notNull(),
   entityId: varchar("entity_id"),
-  details: jsonb("details"), // Snapshot of the change
+  details: jsonb("details"),
+  previousSnapshot: jsonb("previous_snapshot"), // state before update
+  ipAddress: text("ip_address"),
+  userAgent: text("user_agent"),
+  riskFlags: text("risk_flags").array(), // e.g. ['high_discount','off_hours']
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

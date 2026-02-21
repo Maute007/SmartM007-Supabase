@@ -1,20 +1,33 @@
 import { useAuth } from '@/lib/auth';
-import { useState, useRef } from 'react';
+import { useState, useRef, useMemo } from 'react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Search, Plus, FileDown, FileUp, AlertTriangle, Pencil, Trash2, AlertCircle, ArrowUp } from 'lucide-react';
+import { Search, Plus, FileDown, FileUp, AlertTriangle, Pencil, Trash2, AlertCircle, ArrowUp, FileSpreadsheet, Lightbulb, CheckCircle2, GitMerge, RefreshCw, ShieldCheck, Camera } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 import { Product, productsApi, categoriesApi, systemApi } from '@/lib/api';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Checkbox } from '@/components/ui/checkbox';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import * as XLSX from 'xlsx';
 import { toast } from '@/hooks/use-toast';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { BarcodeCameraScan } from '@/components/BarcodeCameraScan';
 
 export default function Products() {
   const { user } = useAuth();
@@ -43,6 +56,7 @@ export default function Products() {
   const [newProduct, setNewProduct] = useState({
     name: '',
     sku: '',
+    barcode: '',
     price: '',
     costPrice: '',
     stock: '',
@@ -58,7 +72,7 @@ export default function Products() {
       queryClient.invalidateQueries({ queryKey: ['/api/products'] });
       queryClient.invalidateQueries({ queryKey: ['/api/system/edit-count'] });
       setIsAddOpen(false);
-      setNewProduct({ name: '', sku: '', price: '', costPrice: '', stock: '', unit: 'un', categoryId: '', minStock: '5', image: '' });
+      setNewProduct({ name: '', sku: '', barcode: '', price: '', costPrice: '', stock: '', unit: 'un', categoryId: '', minStock: '5', image: '' });
       toast({ title: "Sucesso", description: "Produto cadastrado!" });
     },
     onError: (error: Error) => {
@@ -103,6 +117,7 @@ export default function Products() {
 
   const [increaseStockOpen, setIncreaseStockOpen] = useState(false);
   const [selectedProductId, setSelectedProductId] = useState<string>('');
+  const [barcodeScanOpen, setBarcodeScanOpen] = useState<'add' | 'edit' | null>(null);
   const [increaseQuantity, setIncreaseQuantity] = useState('');
   const [increasePrice, setIncreasePrice] = useState('');
   const [isEditOpen, setIsEditOpen] = useState(false);
@@ -146,9 +161,60 @@ export default function Products() {
   });
 
   const filteredProducts = products.filter(p => 
-    p.name.toLowerCase().includes(search.toLowerCase()) || 
-    p.sku.toLowerCase().includes(search.toLowerCase())
+    p.name.toLowerCase().includes(search.toLowerCase()) ||
+    p.sku.toLowerCase().includes(search.toLowerCase()) ||
+    (p.barcode && p.barcode.toLowerCase().includes(search.toLowerCase()))
   );
+
+  // Modelo oficial — nomes de colunas reconhecidos pelo importador
+  const UNIT_OPTIONS = ['un', 'kg', 'g', 'pack', 'box'] as const;
+  // Variações aceites na coluna Unidade (mapeia para o sistema)
+  const UNIT_ALIASES: Record<string, string> = {
+    un: 'un', unidade: 'un', unidades: 'un', unit: 'un', pç: 'un', pcs: 'un', peça: 'un', peças: 'un',
+    kg: 'kg', quilograma: 'kg', quilogramas: 'kg', quilo: 'kg', quilos: 'kg', kilograma: 'kg',
+    g: 'g', grama: 'g', gramas: 'g', gr: 'g',
+    pack: 'pack', pacote: 'pack', pacotes: 'pack', pct: 'pack',
+    box: 'box', caixa: 'box', caixas: 'box', cx: 'box',
+  };
+
+  const handleExportTemplate = () => {
+    const exportData = products.length > 0
+      ? products.map(p => ({
+          Nome: p.name,
+          SKU: p.sku,
+          Preço: parseFloat(p.price),
+          Custo: parseFloat(p.costPrice),
+          Estoque: parseFloat(p.stock),
+          Mínimo: parseFloat(p.minStock),
+          Unidade: p.unit,
+          Categoria: categories.find(c => c.id === p.categoryId)?.name || ''
+        }))
+      : [{
+          Nome: 'Exemplo: Arroz 5kg',
+          SKU: 'ARR-001',
+          Preço: 250,
+          Custo: 180,
+          Estoque: 50,
+          Mínimo: 10,
+          Unidade: 'kg',
+          Categoria: categories[0]?.name || 'Geral',
+        }];
+    const instrucoes = [
+      { Campo: 'Unidade - Valores aceites:', Exemplo: 'un, kg, g, pack, box' },
+      { Campo: 'Ou em português:', Exemplo: 'unidade, quilograma, grama, pacote, caixa' },
+      { Campo: 'Abreviações:', Exemplo: 'pç, pct, cx, gr' },
+    ];
+    const ws = XLSX.utils.json_to_sheet(exportData);
+    const wsInstrucoes = XLSX.utils.json_to_sheet(instrucoes);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Modelo Produtos');
+    XLSX.utils.book_append_sheet(wb, wsInstrucoes, 'Unidades aceites');
+    XLSX.writeFile(wb, products.length > 0 ? 'produtos_modelo.xlsx' : 'modelo_importacao_produtos.xlsx');
+    toast({
+      title: 'Modelo exportado',
+      description: products.length > 0 ? 'Edite e importe para atualizar.' : 'Preencha os dados e importe no sistema.',
+    });
+  };
 
   const handleExport = () => {
     const exportData = products.map(p => ({
@@ -169,14 +235,106 @@ export default function Products() {
     toast({ title: "Sucesso", description: "Produtos exportados com sucesso!" });
   };
 
-  const handleImportClick = () => {
-    fileInputRef.current?.click();
+  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
+  const [importPreview, setImportPreview] = useState<Array<Record<string, any>> | null>(null);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importStep, setImportStep] = useState<'upload' | 'preview'>('upload');
+  const [importMode, setImportMode] = useState<'merge' | 'reset'>('merge');
+  const [needsAgreePulse, setNeedsAgreePulse] = useState(false);
+  const [importAgreeMerge, setImportAgreeMerge] = useState(false);
+  const [importAgreeReset, setImportAgreeReset] = useState(false);
+  const [showResetConfirmModal, setShowResetConfirmModal] = useState(false);
+
+  const parseRowToProduct = (row: any, index: number) => {
+    const getVal = (keys: string[]) => {
+      for (const k of keys) {
+        const v = row[k];
+        if (v !== undefined && v !== null && String(v).trim() !== '') return v;
+      }
+      return null;
+    };
+    const name = getVal(['Nome', 'name', 'nome']) || `Produto ${index + 1}`;
+    const sku = getVal(['SKU', 'sku', 'codigo']) || `IMP-${Date.now()}-${index}`;
+    const priceRaw = getVal(['Preço', 'Preco', 'price', 'preco']);
+    const price = priceRaw != null ? String(priceRaw) : '';
+    const costPriceRaw = getVal(['Custo', 'Custo', 'costPrice', 'custo']);
+    const costPrice = costPriceRaw != null ? String(costPriceRaw) : '';
+    const stockRaw = getVal(['Estoque', 'stock', 'estoque']);
+    const stock = stockRaw != null ? String(stockRaw) : '';
+    const minStockRaw = getVal(['Mínimo', 'Minimo', 'minStock', 'minimo']);
+    const minStock = minStockRaw != null ? String(minStockRaw) : '';
+    const unitRaw = String(getVal(['Unidade', 'unit', 'unidade']) ?? 'un').trim().toLowerCase();
+    const unit = UNIT_ALIASES[unitRaw] || (UNIT_OPTIONS.includes(unitRaw as any) ? unitRaw : 'un');
+    const categoryName = getVal(['Categoria', 'category', 'categoria']);
+    const categoryId = categories.find(c => c.name === categoryName)?.id || categories[0]?.id || null;
+    return { name: String(name), sku: String(sku), price, costPrice, stock, minStock, unit, categoryId, image: '' };
   };
 
-  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const catKey = (id: string | null | undefined) => id ?? '_';
+  const matchKeyFull = (p: { name: string; unit: string; price: string; categoryId?: string | null }) =>
+    `${String(p.name ?? '').trim().toLowerCase()}|${p.unit}|${parseFloat(String(p.price ?? 0))}|${catKey(p.categoryId)}`;
+  const matchKeyMerge = (p: { name: string; unit: string; categoryId?: string | null }) =>
+    `${String(p.name ?? '').trim().toLowerCase()}|${p.unit}|${catKey(p.categoryId)}`;
+
+  const importStats = useMemo(() => {
+    if (!importPreview?.length) return { toAdd: 0, toUpdate: 0, toRemove: 0 };
+    if (importMode === 'merge') {
+      const dbKeysMerge = new Set(products.map(p => matchKeyMerge({ name: p.name, unit: p.unit, categoryId: p.categoryId })));
+      let toAdd = 0, toUpdate = 0;
+      for (const p of importPreview) {
+        const k = matchKeyMerge({ name: String(p.name ?? ''), unit: String(p.unit ?? 'un'), categoryId: p.categoryId });
+        if (dbKeysMerge.has(k)) toUpdate++;
+        else toAdd++;
+      }
+      return { toAdd, toUpdate, toRemove: 0 };
+    }
+    const fileKeysFull = new Set(importPreview.map(p => matchKeyFull({ name: String(p.name ?? ''), unit: String(p.unit ?? 'un'), price: String(p.price ?? 0), categoryId: p.categoryId })));
+    const dbKeysFull = new Set(products.map(p => matchKeyFull({ name: p.name, unit: p.unit, price: p.price, categoryId: p.categoryId })));
+    let toAdd = 0, toUpdate = 0;
+    for (const p of importPreview) {
+      const k = matchKeyFull({ name: String(p.name ?? ''), unit: String(p.unit ?? 'un'), price: String(p.price ?? 0), categoryId: p.categoryId });
+      if (dbKeysFull.has(k)) toUpdate++;
+      else toAdd++;
+    }
+    const toRemove = products.filter(p => !fileKeysFull.has(matchKeyFull({ name: p.name, unit: p.unit, price: p.price, categoryId: p.categoryId }))).length;
+    return { toAdd, toUpdate, toRemove };
+  }, [importPreview, products, importMode]);
+
+  const importMutation = useMutation({
+    mutationFn: (data: { products: any[]; mode: 'merge' | 'reset' }) => productsApi.import(data),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/products'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/audit-logs/recent-imports'] });
+      setIsImportDialogOpen(false);
+      setImportPreview(null);
+      setImportFile(null);
+      setImportAgreeMerge(false);
+      setImportAgreeReset(false);
+      setShowResetConfirmModal(false);
+      const desc = [result.added > 0 && `${result.added} adicionados`, result.updated > 0 && `${result.updated} atualizados`, result.removed > 0 && `${result.removed} removidos`].filter(Boolean).join(', ') || 'Concluído';
+      toast({
+        title: 'Importação concluída',
+        description: `${desc}. Consulte Relatórios → Importações para ver o detalhe.`,
+      });
+    },
+    onError: (e: Error) => {
+      toast({ variant: 'destructive', title: 'Erro', description: e.message });
+    },
+  });
+
+  const handleImportClick = () => {
+    setIsImportDialogOpen(true);
+    setImportPreview(null);
+    setImportFile(null);
+    setImportStep('upload');
+    setImportMode('merge');
+    setImportAgreeMerge(false);
+    setImportAgreeReset(false);
+  };
+
+  const handleFileSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
     const reader = new FileReader();
     reader.onload = (evt) => {
       const bstr = evt.target?.result;
@@ -184,26 +342,50 @@ export default function Products() {
       const wsname = wb.SheetNames[0];
       const ws = wb.Sheets[wsname];
       const data = XLSX.utils.sheet_to_json(ws) as any[];
-      
-      data.forEach((row: any) => {
-        const categoryId = categories.find(c => c.name === row.Categoria)?.id || categories[0]?.id || null;
-        
-        createProductMutation.mutate({
-          name: row.Nome || row.name || 'Produto Importado',
-          sku: row.SKU || row.sku || `IMP-${Date.now()}`,
-          price: String(row.Preço || row.price || 0),
-          costPrice: String(row.Custo || row.costPrice || 0),
-          stock: String(row.Estoque || row.stock || 0),
-          minStock: String(row.Minimo || row.minStock || 5),
-          unit: (row.Unidade || row.unit || 'un') as any,
-          categoryId,
-          image: ''
-        });
-      });
-
-      toast({ title: "Sucesso", description: `Importando ${data.length} produtos...` });
+      const preview = data.map((row, i) => parseRowToProduct(row, i));
+      setImportPreview(preview);
+      setImportFile(file);
+      setImportStep('preview');
     };
     reader.readAsBinaryString(file);
+    e.target.value = '';
+  };
+
+  const handleConfirmImport = () => {
+    if (!importPreview || importPreview.length === 0) return;
+    if (importMode === 'merge') {
+      if (!importAgreeMerge) {
+        setNeedsAgreePulse(true);
+        toast({ variant: 'destructive', title: 'Confirme', description: 'Marque que leu e concorda com os efeitos.' });
+        return;
+      }
+      setNeedsAgreePulse(false);
+      runImport();
+    } else {
+      if (!importAgreeReset) {
+        setNeedsAgreePulse(true);
+        toast({ variant: 'destructive', title: 'Confirme', description: 'Marque que concorda em substituir os produtos.' });
+        return;
+      }
+      setNeedsAgreePulse(false);
+      setShowResetConfirmModal(true);
+    }
+  };
+
+  const runImport = () => {
+    if (!importPreview?.length) return;
+    const payload = importPreview.map(p => ({
+      name: p.name,
+      sku: p.sku,
+      price: p.price ?? '',
+      costPrice: p.costPrice ?? '',
+      stock: p.stock ?? '',
+      minStock: p.minStock ?? '',
+      unit: p.unit,
+      categoryId: p.categoryId,
+      image: p.image || '',
+    }));
+    importMutation.mutate({ products: payload, mode: importMode });
   };
 
   const handleSaveProduct = () => {
@@ -225,9 +407,11 @@ export default function Products() {
       return;
     }
     
+    const sku = newProduct.sku?.trim() || newProduct.barcode?.trim() || `SKU-${Date.now()}`;
     createProductMutation.mutate({
       name: newProduct.name,
-      sku: newProduct.sku || `SKU-${Date.now()}`,
+      sku,
+      ...(newProduct.barcode?.trim() && { barcode: newProduct.barcode.trim() }),
       categoryId: newProduct.categoryId || categories[0]?.id || null,
       price: newProduct.price,
       costPrice: newProduct.costPrice || '0',
@@ -273,6 +457,7 @@ export default function Products() {
       data: {
         name: editingProduct.name,
         sku: editingProduct.sku,
+        barcode: editingProduct.barcode || undefined,
         price: editingProduct.price,
         costPrice: editingProduct.costPrice,
         stock: editingProduct.stock,
@@ -303,14 +488,284 @@ export default function Products() {
           <h1 className="text-3xl font-heading font-bold text-foreground">Produtos</h1>
           <p className="text-muted-foreground">Gerencie seu estoque e catálogo.</p>
         </div>
-        <div className="flex gap-2">
-          <input type="file" ref={fileInputRef} onChange={handleImport} className="hidden" accept=".xlsx,.xls" />
-          <Button variant="outline" onClick={handleImportClick} data-testid="button-import">
-            <FileUp className="mr-2 h-4 w-4" />
-            Importar
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" onClick={handleExportTemplate} className="gap-2">
+            <FileSpreadsheet className="h-4 w-4" />
+            Modelo
           </Button>
-          <Button variant="outline" onClick={handleExport} data-testid="button-export">
-            <FileDown className="mr-2 h-4 w-4" />
+          <Dialog open={isImportDialogOpen} onOpenChange={setIsImportDialogOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline" onClick={handleImportClick} data-testid="button-import" className="gap-2">
+                <FileUp className="h-4 w-4" />
+                Importar
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" aria-describedby="import-dialog-desc">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <FileUp className="h-5 w-5 text-primary" />
+                  Importar Produtos
+                </DialogTitle>
+                <DialogDescription id="import-dialog-desc" className="sr-only">
+                  Importe produtos a partir de um ficheiro Excel (.xlsx). Escolha o modo (Adicionar/atualizar ou Substituir tudo) e confirme que leu os efeitos antes de prosseguir.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                {importStep === 'upload' && (
+                  <>
+                    <div className="rounded-xl bg-primary/5 border border-primary/20 p-4 space-y-3">
+                      <div className="flex items-start gap-3">
+                        <Lightbulb className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
+                        <div>
+                          <p className="font-medium">Recomendado: use o modelo do sistema</p>
+                          <p className="text-sm text-muted-foreground mt-1">
+                            Para garantir que os dados sejam reconhecidos, baixe o modelo, preencha com seus produtos e importe. 
+                            O sistema reconhece automaticamente as colunas e ajusta os valores.
+                          </p>
+                        </div>
+                      </div>
+                      <Button variant="outline" size="sm" onClick={handleExportTemplate} className="gap-2">
+                        <FileSpreadsheet className="h-4 w-4" />
+                        Baixar modelo
+                      </Button>
+                      <div className="mt-2 pt-2 border-t border-primary/20">
+                        <p className="text-xs font-medium text-muted-foreground">Coluna Unidade — valores aceites:</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          <strong>un</strong> (unidade), <strong>kg</strong> (quilograma), <strong>g</strong> (grama), <strong>pack</strong> (pacote), <strong>box</strong> (caixa). 
+                          Também aceita: unidade, quilograma, pacote, caixa, pç, pct, cx, gr.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>1. Baixou o modelo? Preencheu os dados?</Label>
+                      <Label className="text-muted-foreground font-normal">2. Selecione o ficheiro Excel (.xlsx) para importar</Label>
+                      <div
+                        className="border-2 border-dashed rounded-xl p-8 text-center hover:border-primary/50 hover:bg-primary/5 transition-colors cursor-pointer"
+                        onClick={() => fileInputRef.current?.click()}
+                        onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('border-primary', 'bg-primary/10'); }}
+                        onDragLeave={(e) => { e.currentTarget.classList.remove('border-primary', 'bg-primary/10'); }}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          e.currentTarget.classList.remove('border-primary', 'bg-primary/10');
+                          const f = e.dataTransfer.files[0];
+                          if (f && (f.name.endsWith('.xlsx') || f.name.endsWith('.xls'))) {
+                            const reader = new FileReader();
+                            reader.onload = (ev) => {
+                              const wb = XLSX.read(ev.target?.result, { type: 'binary' });
+                              const data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]) as any[];
+                              setImportPreview(data.map((r, i) => parseRowToProduct(r, i)));
+                              setImportFile(f);
+                              setImportStep('preview');
+                            };
+                            reader.readAsBinaryString(f);
+                          }
+                        }}
+                      >
+                        <input
+                          type="file"
+                          ref={fileInputRef}
+                          onChange={handleFileSelected}
+                          className="hidden"
+                          accept=".xlsx,.xls"
+                        />
+                        <FileUp className="h-12 w-12 mx-auto text-muted-foreground mb-3" />
+                        <p className="text-sm font-medium">Arraste o ficheiro ou clique para selecionar</p>
+                        <p className="text-xs text-muted-foreground mt-1">Formatos: .xlsx, .xls</p>
+                        <Button
+                          variant="secondary"
+                          className="mt-4"
+                          onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}
+                        >
+                          Escolher ficheiro
+                        </Button>
+                      </div>
+                    </div>
+                  </>
+                )}
+                {importStep === 'preview' && importPreview && (
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2 text-emerald-600">
+                      <CheckCircle2 className="h-5 w-5" />
+                      <span className="font-medium">Ficheiro carregado: {importFile?.name}</span>
+                    </div>
+
+                    <div className="space-y-3">
+                      <Label className="text-base font-semibold text-foreground">Modo de importação — escolha com atenção</Label>
+                      <RadioGroup value={importMode} onValueChange={(v: 'merge' | 'reset') => { setImportMode(v); setNeedsAgreePulse(false); }}>
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          <label
+                            htmlFor="merge"
+                            className={`flex cursor-pointer items-start gap-3 rounded-xl border-2 p-4 transition-all hover:border-primary/50 ${importMode === 'merge' ? 'border-primary bg-primary/5 shadow-sm' : 'border-border bg-muted/20'}`}
+                          >
+                            <RadioGroupItem value="merge" id="merge" className="mt-1" />
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 font-semibold text-foreground">
+                                <GitMerge className="h-5 w-5 text-primary" />
+                                Adicionar/atualizar (Merge)
+                              </div>
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                Soma stock nos existentes, cria novos. Nada é eliminado.
+                              </p>
+                            </div>
+                          </label>
+                          <label
+                            htmlFor="reset"
+                            className={`flex cursor-pointer items-start gap-3 rounded-xl border-2 p-4 transition-all hover:border-destructive/50 ${importMode === 'reset' ? 'border-destructive bg-destructive/5 shadow-sm' : 'border-border bg-muted/20'}`}
+                          >
+                            <RadioGroupItem value="reset" id="reset" className="mt-1" />
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 font-semibold text-foreground">
+                                <RefreshCw className="h-5 w-5 text-destructive" />
+                                Substituir tudo (Reset)
+                              </div>
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                Ficheiro = fonte única. Produtos ausentes são eliminados.
+                              </p>
+                            </div>
+                          </label>
+                        </div>
+                      </RadioGroup>
+                    </div>
+
+                    <div className="rounded-lg border p-3 bg-muted/30 space-y-2">
+                      <p className="text-sm font-medium">Resumo previsto:</p>
+                      <p className="text-sm text-muted-foreground">
+                        {importStats.toAdd} a adicionar · {importStats.toUpdate} a atualizar
+                        {importMode === 'reset' && importStats.toRemove > 0 && (
+                          <span className="text-destructive font-medium"> · {importStats.toRemove} a eliminar</span>
+                        )}
+                      </p>
+                    </div>
+
+                    {importMode === 'merge' && (
+                      <Alert>
+                        <Lightbulb className="h-4 w-4" />
+                        <AlertDescription>
+                          Produtos existentes (nome + unidade + categoria) são encontrados e actualizados. Deixe em branco os campos que não pretende alterar — ex.: só preço? Deixe Estoque vazio. Novos produtos serão criados. Nada será eliminado.
+                        </AlertDescription>
+                      </Alert>
+                    )}
+                    {importMode === 'reset' && (
+                      <Alert variant="destructive">
+                        <AlertTriangle className="h-4 w-4" />
+                        <AlertDescription>
+                          Atenção: produtos na base de dados que não estiverem no ficheiro serão eliminados. O ficheiro passa a ser a única fonte de verdade.
+                        </AlertDescription>
+                      </Alert>
+                    )}
+
+                    <div
+                      className={`rounded-xl border-2 p-4 transition-colors ${
+                        needsAgreePulse
+                          ? 'border-accent bg-accent/10 animate-agree-pulse'
+                          : 'border-border bg-muted/30'
+                      }`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <Checkbox
+                          id={importMode === 'merge' ? 'agree-merge' : 'agree-reset'}
+                          checked={importMode === 'merge' ? importAgreeMerge : importAgreeReset}
+                          onCheckedChange={(c) => {
+                            const v = !!c;
+                            if (importMode === 'merge') setImportAgreeMerge(v);
+                            else setImportAgreeReset(v);
+                            if (v) setNeedsAgreePulse(false);
+                          }}
+                          className="mt-0.5 h-5 w-5"
+                        />
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <ShieldCheck className={`h-5 w-5 shrink-0 ${needsAgreePulse ? 'text-accent' : 'text-primary'}`} />
+                            <Label
+                              htmlFor={importMode === 'merge' ? 'agree-merge' : 'agree-reset'}
+                              className="cursor-pointer text-base font-semibold text-foreground"
+                            >
+                              Li e concordo — obrigatório para continuar
+                            </Label>
+                          </div>
+                          <p className="mt-1 text-sm text-muted-foreground">
+                            {importMode === 'merge'
+                              ? 'Li e concordo que os produtos existentes terão o stock somado e novos serão criados. Nada será eliminado.'
+                              : 'Concordo que vou substituir todos os produtos pelos do ficheiro. Produtos ausentes no ficheiro serão eliminados.'}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="rounded-lg border overflow-x-auto max-h-[300px] overflow-y-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>#</TableHead>
+                            <TableHead>Nome</TableHead>
+                            <TableHead>SKU</TableHead>
+                            <TableHead>Preço</TableHead>
+                            <TableHead>Estoque</TableHead>
+                            <TableHead>Categoria</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {importPreview.slice(0, 10).map((p, i) => (
+                            <TableRow key={i}>
+                              <TableCell>{i + 1}</TableCell>
+                              <TableCell>{p.name}</TableCell>
+                              <TableCell>{p.sku}</TableCell>
+                              <TableCell>{formatCurrency(parseFloat(p.price))}</TableCell>
+                              <TableCell>{p.stock}</TableCell>
+                              <TableCell>{categories.find(c => c.id === p.categoryId)?.name || '-'}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                    {importPreview.length > 10 && (
+                      <p className="text-sm text-muted-foreground">... e mais {importPreview.length - 10} produtos</p>
+                    )}
+                    {importPreview.some(p => !p.name?.trim()) && (
+                      <Alert variant="destructive">
+                        <AlertTriangle className="h-4 w-4" />
+                        <AlertDescription>
+                          Alguns produtos sem nome serão importados como "Produto 1", "Produto 2", etc.
+                        </AlertDescription>
+                      </Alert>
+                    )}
+                    <p className="text-sm font-medium">{importPreview.length} produtos prontos para importar</p>
+                    <DialogFooter>
+                      <Button variant="outline" onClick={() => { setImportStep('upload'); setImportPreview(null); setNeedsAgreePulse(false); }}>
+                        Voltar
+                      </Button>
+                      <Button onClick={handleConfirmImport} disabled={importMutation.isPending}>
+                        Confirmar importação
+                      </Button>
+                    </DialogFooter>
+                  </div>
+                )}
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          <AlertDialog open={showResetConfirmModal} onOpenChange={setShowResetConfirmModal}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Tem a certeza?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Esta acção irá eliminar {importStats.toRemove} produtos da base de dados. Não pode ser revertida.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={runImport}
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                >
+                  Sim, confirmo
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+
+          <Button variant="outline" onClick={handleExport} data-testid="button-export" className="gap-2">
+            <FileDown className="h-4 w-4" />
             Exportar
           </Button>
           
@@ -321,7 +776,7 @@ export default function Products() {
                 Novo Produto
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-2xl">
+            <DialogContent className="max-w-2xl" aria-describedby={undefined}>
               <DialogHeader>
                 <DialogTitle>Adicionar Produto</DialogTitle>
               </DialogHeader>
@@ -334,8 +789,8 @@ export default function Products() {
                     </AlertDescription>
                   </Alert>
                 )}
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="grid gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="grid gap-2 sm:col-span-2">
                     <Label>Nome do Produto</Label>
                     <Input 
                       value={newProduct.name} 
@@ -344,14 +799,36 @@ export default function Products() {
                     />
                   </div>
                   <div className="grid gap-2">
-                    <Label>Código (SKU)</Label>
+                    <Label>Código (SKU ou Código de Barras)</Label>
                     <Input 
                       value={newProduct.sku} 
                       onChange={e => setNewProduct({...newProduct, sku: e.target.value})}
-                      placeholder="Gerado automaticamente se vazio"
+                      placeholder="Código interno ou EAN — gerado automaticamente se vazio"
                       data-testid="input-product-sku"
                     />
                   </div>
+                </div>
+                <div className="grid gap-2">
+                  <Label>Código de Barras (opcional — escanear ou digitar)</Label>
+                  <div className="flex gap-2">
+                    <Input 
+                      value={newProduct.barcode} 
+                      onChange={e => setNewProduct({...newProduct, barcode: e.target.value})}
+                      placeholder="EAN-13, UPC — ou use o botão para escanear"
+                      data-testid="input-product-barcode"
+                      className="flex-1"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      onClick={() => setBarcodeScanOpen('add')}
+                      title="Escanear código de barras"
+                    >
+                      <Camera className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">Pode registar barcode, SKU ou ambos. Se vazio, o sistema gera automaticamente — ambos servem para venda com scanner.</p>
                 </div>
 
                 <div className="grid grid-cols-3 gap-4">
@@ -434,7 +911,7 @@ export default function Products() {
                             <Plus className="h-4 w-4" />
                           </Button>
                         </DialogTrigger>
-                        <DialogContent className="sm:max-w-md">
+                        <DialogContent className="sm:max-w-md" aria-describedby={undefined}>
                           <DialogHeader>
                             <DialogTitle>Nova Categoria</DialogTitle>
                           </DialogHeader>
@@ -502,6 +979,29 @@ export default function Products() {
               </Button>
             </DialogContent>
           </Dialog>
+
+          <Dialog open={!!barcodeScanOpen} onOpenChange={(o) => !o && setBarcodeScanOpen(null)}>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>Ler código de barras</DialogTitle>
+                <DialogDescription>
+                  Capte uma foto do código. O sistema converte em escala cinza e extrai o código para você verificar.
+                </DialogDescription>
+              </DialogHeader>
+              <BarcodeCameraScan
+                id="products-barcode-scan"
+                onScan={(code) => {
+                  if (barcodeScanOpen === 'add') {
+                    setNewProduct(p => ({ ...p, barcode: code, sku: p.sku || code }));
+                  } else if (barcodeScanOpen === 'edit' && editingProduct) {
+                    setEditingProduct({ ...editingProduct, barcode: code });
+                  }
+                  setBarcodeScanOpen(null);
+                }}
+                onClose={() => setBarcodeScanOpen(null)}
+              />
+            </DialogContent>
+          </Dialog>
         </div>
       </div>
 
@@ -517,7 +1017,7 @@ export default function Products() {
 
       {/* Modal de Edição de Produtos */}
       <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" aria-describedby={undefined}>
           <DialogHeader>
             <DialogTitle>Editar Produto</DialogTitle>
           </DialogHeader>
@@ -539,6 +1039,27 @@ export default function Products() {
                     onChange={e => setEditingProduct({...editingProduct, sku: e.target.value})}
                     data-testid="input-edit-product-sku"
                   />
+                </div>
+              </div>
+              <div className="grid gap-2">
+                <Label>Código de Barras (opcional)</Label>
+                <div className="flex gap-2">
+                  <Input 
+                    value={editingProduct.barcode || ''} 
+                    onChange={e => setEditingProduct({...editingProduct, barcode: e.target.value})}
+                    placeholder="EAN-13, UPC — ou use o botão para escanear"
+                    data-testid="input-edit-product-barcode"
+                    className="flex-1"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    onClick={() => setBarcodeScanOpen('edit')}
+                    title="Escanear código de barras"
+                  >
+                    <Camera className="h-4 w-4" />
+                  </Button>
                 </div>
               </div>
 
@@ -735,7 +1256,7 @@ export default function Products() {
                         >
                           <ArrowUp className="h-4 w-4" />
                         </Button>
-                        <DialogContent>
+                        <DialogContent aria-describedby={undefined}>
                           <DialogHeader>
                             <DialogTitle>Aumentar Estoque: {product.name}</DialogTitle>
                           </DialogHeader>

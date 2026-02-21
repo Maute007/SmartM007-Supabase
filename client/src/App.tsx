@@ -16,6 +16,7 @@ import ClientOrders from "@/pages/ClientOrders";
 import Orders from "@/pages/Orders";
 import Tracking from "@/pages/Tracking";
 import SalesHistory from "@/pages/SalesHistory";
+import Scanner from "@/pages/Scanner";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { AuthProvider } from "@/lib/auth";
 import { CartProvider } from "@/lib/cart";
@@ -26,6 +27,7 @@ function Router() {
       <Route path="/setup" component={Setup} />
       <Route path="/login" component={Login} />
       <Route path="/pedidos" component={ClientOrders} />
+      <Route path="/scanner/:token" component={Scanner} />
       
       {/* Protected Routes wrapped in MainLayout */}
       <Route path="/">

@@ -25,7 +25,7 @@ export default async function runApp(
   app: Express,
   setup: (app: Express, server: Server) => Promise<void>,
 ) {
-  const host = process.env.HOST || "localhost";
+  const host = process.env.HOST || "0.0.0.0";
   const port = Number(process.env.PORT || 9001);
 
   let server: Server;
@@ -70,10 +70,30 @@ export default async function runApp(
   /* =======================================================
      PHASE 2 — Start server (UMA porta, UMA vez)
   ======================================================= */
+  const protocol = process.env.HTTPS === "1" || process.env.HTTPS === "true" ? "https" : "http";
   server.listen(port, host, async () => {
     log(`✓ Server listening on ${host}:${port}`);
     log(`Environment: ${process.env.NODE_ENV || "development"}`);
-    log(`Access at: http://${host}:${port}`);
+    log(`Access at: ${protocol}://localhost:${port}`);
+    if (protocol === "https") {
+      log(`  ⚠ Certificado auto-assinado: aceite o aviso no navegador para usar a câmera no celular`);
+    }
+    if (host === "0.0.0.0") {
+      try {
+        const os = await import("node:os");
+        const nets = os.networkInterfaces();
+        for (const name of Object.keys(nets)) {
+          for (const net of nets[name] || []) {
+            const isIPv4 = net.family === "IPv4" || (net as { family?: number }).family === 4;
+            if (isIPv4 && !net.internal) {
+              log(`  Também em: ${protocol}://${net.address}:${port} (para testar no celular)`);
+            }
+          }
+        }
+      } catch {
+        /* ignore */
+      }
+    }
 
     /* =====================================================
        PHASE 3 — Setup (Vite ou Static)

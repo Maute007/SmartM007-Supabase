@@ -149,6 +149,11 @@
   100% { left: 100%; }
 }
 
+@keyframes agree-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 hsl(32 95% 55% / 0.5); }
+  50% { box-shadow: 0 0 0 8px hsl(32 95% 55% / 0); }
+}
+
 @layer utilities {
   .animate-float { animation: float 6s ease-in-out infinite; }
   .animate-float-slow { animation: float 8s ease-in-out infinite; }
@@ -173,6 +178,7 @@
   .animate-bounce-subtle { animation: bounce-subtle 2s ease-in-out infinite; }
   .animate-border-glow { animation: border-glow 2s ease-in-out infinite; }
   .animate-pulse-soft { animation: pulse-soft 3s ease-in-out infinite; }
+  .animate-agree-pulse { animation: agree-pulse 1s ease-in-out infinite; }
 
   .animation-delay-100 { animation-delay: 100ms; }
   .animation-delay-200 { animation-delay: 200ms; }

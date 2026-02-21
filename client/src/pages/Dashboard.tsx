@@ -8,21 +8,26 @@ import {
   AlertTriangle, 
   TrendingUp,
   Users,
-  Activity,
   Zap,
   Star,
   Bell,
   Lightbulb,
   Target,
   Sparkles,
+  FileUp,
+  ArrowRight,
+  History,
+  Settings,
+  BarChart3,
 } from 'lucide-react';
 import { Link } from 'wouter';
 import { formatCurrency } from '@/lib/utils';
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis, BarChart, Bar, Cell, PieChart, Pie, Legend } from 'recharts';
-import { format, subDays } from 'date-fns';
+import { format, subDays, formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useQuery } from '@tanstack/react-query';
-import { salesApi, productsApi, usersApi, notificationsApi } from '@/lib/api';
+import { salesApi, productsApi, usersApi, notificationsApi, auditLogsApi } from '@/lib/api';
+import { formatAuditLog } from '@/lib/auditFormat';
 
 export default function Dashboard() {
   const { user } = useAuth();
@@ -47,6 +52,15 @@ export default function Dashboard() {
     queryFn: notificationsApi.getAll
   });
 
+  const isManagerOrAdmin = user?.role === 'admin' || user?.role === 'manager';
+  const canViewImports = isManagerOrAdmin;
+  const { data: lastImport } = useQuery({
+    queryKey: ['/api/audit-logs/recent-imports', 1],
+    queryFn: () => auditLogsApi.getRecentImports(1),
+    enabled: !!canViewImports
+  });
+  const latestImport = lastImport?.[0];
+
   const totalSalesToday = sales
     .filter(s => new Date(s.createdAt).toDateString() === new Date().toDateString())
     .reduce((acc, curr) => acc + parseFloat(curr.total), 0);
@@ -57,6 +71,25 @@ export default function Dashboard() {
 
   const lowStockCount = products.filter(p => parseFloat(p.stock) <= parseFloat(p.minStock)).length;
   const activeUsers = users.length;
+
+  // Vendas por vendedor (manager/admin) - últimos 7 dias
+  const salesLast7Days = sales.filter(s => (Date.now() - new Date(s.createdAt).getTime()) / (1000 * 60 * 60 * 24) <= 7);
+  const salesBySeller = isManagerOrAdmin
+    ? salesLast7Days.reduce((acc, s) => {
+        const name = users.find(u => u.id === s.userId)?.name || 'Desconhecido';
+        const existing = acc.find(x => x.userId === s.userId);
+        const total = parseFloat(s.total);
+        if (existing) {
+          existing.total += total;
+          existing.orders += 1;
+        } else {
+          acc.push({ userId: s.userId, name, total, orders: 1 });
+        }
+        return acc;
+      }, [] as { userId: string; name: string; total: number; orders: number }[])
+        .sort((a, b) => b.total - a.total)
+        .slice(0, 5)
+    : [];
 
   // Top 5 produtos mais vendidos
   const topProducts = sales
@@ -165,19 +198,35 @@ export default function Dashboard() {
               )}
             </p>
           </div>
-          <div className="flex gap-3">
-            <Link href="/reports">
-              <Button variant="secondary" className="bg-white/10 hover:bg-white/20 text-white border-0 shadow-lg transition-all duration-300 hover:scale-105 hover:-translate-y-0.5">
-                <Activity className="mr-2 h-4 w-4" />
-                Relatórios
-              </Button>
-            </Link>
+          <div className="flex flex-wrap gap-3">
             <Link href="/pos">
               <Button size="lg" className="bg-white text-primary hover:bg-white/90 font-bold shadow-lg transition-all duration-300 hover:scale-105 hover:-translate-y-0.5">
                 <Zap className="mr-2 h-4 w-4 fill-current" />
                 Nova Venda
               </Button>
             </Link>
+            <Link href="/reports">
+              <Button variant="secondary" className="bg-white/10 hover:bg-white/20 text-white border-0 shadow-lg transition-all duration-300 hover:scale-105 hover:-translate-y-0.5">
+                <BarChart3 className="mr-2 h-4 w-4" />
+                Relatórios
+              </Button>
+            </Link>
+            {isManagerOrAdmin && (
+              <Link href="/tracking">
+                <Button variant="secondary" className="bg-white/10 hover:bg-white/20 text-white border-0 shadow-lg transition-all duration-300 hover:scale-105 hover:-translate-y-0.5">
+                  <History className="mr-2 h-4 w-4" />
+                  Rastreamento
+                </Button>
+              </Link>
+            )}
+            {user?.role === 'admin' && (
+              <Link href="/settings">
+                <Button variant="secondary" className="bg-white/10 hover:bg-white/20 text-white border-0 shadow-lg transition-all duration-300 hover:scale-105 hover:-translate-y-0.5">
+                  <Settings className="mr-2 h-4 w-4" />
+                  Configurações
+                </Button>
+              </Link>
+            )}
           </div>
         </div>
       </div>
@@ -254,6 +303,40 @@ export default function Dashboard() {
         </Card>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {isManagerOrAdmin && salesBySeller.length > 0 && (
+          <Card className="border-none shadow-xl bg-gradient-to-br from-violet-50 via-white to-indigo-50/30 hover-lift transition-smooth border-l-4 border-l-violet-500">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-lg font-bold flex items-center gap-2">
+                  <Users className="h-5 w-5 text-violet-600" />
+                  Desempenho da Equipe
+                </CardTitle>
+                <Link href="/reports">
+                  <Button variant="ghost" size="sm" className="text-violet-600 hover:bg-violet-100 gap-1">
+                    Ver mais <ArrowRight className="h-3 w-3" />
+                  </Button>
+                </Link>
+              </div>
+              <CardDescription className="text-xs">Vendas por vendedor (7 dias)</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {salesBySeller.map((s, idx) => (
+                  <div key={s.userId} className="flex items-center justify-between p-2 bg-violet-50/50 rounded-lg border border-violet-100 hover:shadow-sm transition-all">
+                    <div className="flex items-center gap-2 flex-1">
+                      <span className="font-bold text-violet-600/80">#{idx + 1}</span>
+                      <p className="text-sm font-medium truncate">{s.name}</p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <p className="text-sm font-bold text-violet-700">{formatCurrency(s.total)}</p>
+                      <p className="text-xs text-muted-foreground">{s.orders} pedidos</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
         <Card className="border-none shadow-xl bg-gradient-to-br from-white to-red-50/30 hover-lift transition-smooth">
           <CardHeader>
             <CardTitle className="text-lg font-bold flex items-center gap-2">
@@ -311,6 +394,48 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
+        {canViewImports && latestImport && (
+          <Card className="border-none shadow-xl bg-gradient-to-br from-emerald-50 via-white to-primary/5 hover-lift transition-smooth border-l-4 border-l-primary col-span-full">
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-xl font-bold flex items-center gap-2">
+                  <div className="h-12 w-12 rounded-xl bg-primary/10 flex items-center justify-center">
+                    <FileUp className="h-6 w-6 text-primary" />
+                  </div>
+                  Última Importação
+                </CardTitle>
+                <Link href="/reports?tab=importacoes">
+                  <Button variant="outline" size="sm" className="text-primary border-primary/30 hover:bg-primary/10 gap-1.5">
+                    Ver todas <ArrowRight className="h-4 w-4" />
+                  </Button>
+                </Link>
+              </div>
+              <CardDescription className="text-sm">Resumo da importação mais recente</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {(() => {
+                const fmt = formatAuditLog(latestImport.action, latestImport.entityType, latestImport.details);
+                const author = users.find(u => u.id === latestImport.userId)?.name || 'Sistema';
+                return (
+                  <div className="rounded-xl bg-white/90 border border-primary/10 p-5 space-y-4">
+                    <div className="flex flex-wrap items-center gap-3">
+                      <p className="text-lg font-semibold text-foreground">{fmt.summary}</p>
+                      <span className="text-sm text-muted-foreground">·</span>
+                      <p className="text-sm text-muted-foreground">{author}</p>
+                      <span className="text-sm text-muted-foreground">·</span>
+                      <p className="text-sm text-muted-foreground">{formatDistanceToNow(new Date(latestImport.createdAt), { addSuffix: true, locale: ptBR })}</p>
+                    </div>
+                    {fmt.detailsText && (
+                      <pre className="text-sm text-muted-foreground bg-muted/40 rounded-lg p-4 max-h-40 overflow-y-auto whitespace-pre-wrap font-sans border border-primary/5">
+                        {fmt.detailsText}
+                      </pre>
+                    )}
+                  </div>
+                );
+              })()}
+            </CardContent>
+          </Card>
+        )}
         <Card className="border-none shadow-xl bg-gradient-to-br from-white via-amber-50/30 to-orange-50/20 hover-lift transition-smooth border-l-4 border-l-amber-500">
           <CardHeader>
             <CardTitle className="text-lg font-bold flex items-center gap-2">

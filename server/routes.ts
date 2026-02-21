@@ -1,5 +1,8 @@
 import type { Express, Request, Response } from "express";
-import { createServer, type Server } from "http";
+import os from "node:os";
+import { createServer as createHttpServer, type Server } from "http";
+import { createServer as createHttpsServer } from "https";
+import selfsigned from "selfsigned";
 import { storage } from "./storage";
 import { insertUserSchema, insertProductSchema, insertCategorySchema, insertSaleSchema } from "@shared/schema";
 import { z } from "zod";
@@ -10,11 +13,17 @@ import {
   saveReceiptSettings,
   saveReceiptToDisk,
   generateReceiptHTML,
+  getReceiptAbsolutePath,
+  receiptExists,
+  listReceiptFiles,
   type ReceiptSettings,
   type ReceiptPaperSize,
 } from "./receipts";
 import { attachWebSocket, wsEvents } from "./websocket";
 import { triggerWebhook, getAllWebhooks, addWebhook, updateWebhook, deleteWebhook, type WebhookEvent } from "./webhooks";
+import { getAuditContext } from "./auditContext";
+import { computeRiskFlags } from "./auditAnomaly";
+import { createScannerToken, consumeBarcodes, pushBarcode, pingToken, listSessions, revokeToken, renewToken, TOKEN_TTL_MS } from "./scannerToken";
 
 // Session augmentation
 declare module 'express-session' {
@@ -64,8 +73,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const user = await storage.verifyPassword(username, password);
-      
+      const ctx = getAuditContext(req);
+
       if (!user) {
+        await storage.createAuditLog({
+          userId: undefined,
+          action: "LOGIN_FAILED",
+          entityType: "auth",
+          entityId: null,
+          details: { username: String(username).slice(0, 100) },
+          ...ctx,
+          riskFlags: [],
+        });
         return res.status(401).json({ error: "Usuário ou senha incorretos" });
       }
 
@@ -75,12 +94,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       req.session.role = user.role;
       req.session.name = user.name;
 
-      res.json({
-        id: user.id,
-        username: user.username,
-        name: user.name,
-        role: user.role,
-        avatar: user.avatar
+      req.session.save((err) => {
+        if (err) {
+          console.error("Session save error:", err);
+          return res.status(500).json({ error: "Erro ao salvar sessão" });
+        }
+        storage.createAuditLog({
+          userId: user.id,
+          action: "LOGIN_SUCCESS",
+          entityType: "auth",
+          entityId: user.id,
+          details: { username: user.username },
+          ...ctx,
+          riskFlags: [],
+        }).catch(() => {});
+        res.json({
+          id: user.id,
+          username: user.username,
+          name: user.name,
+          role: user.role,
+          avatar: user.avatar
+        });
       });
     } catch (error) {
       console.error("Login error:", error);
@@ -89,10 +123,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Logout
-  app.post("/api/auth/logout", (req: Request, res: Response) => {
-    req.session.destroy((err) => {
+  app.post("/api/auth/logout", async (req: Request, res: Response) => {
+    const userId = req.session.userId ?? undefined;
+    const ctx = getAuditContext(req);
+    req.session.destroy(async (err) => {
       if (err) {
         return res.status(500).json({ error: "Erro ao fazer logout" });
+      }
+      if (userId) {
+        await storage.createAuditLog({
+          userId,
+          action: "LOGOUT",
+          entityType: "auth",
+          entityId: userId,
+          details: {},
+          ...ctx,
+          riskFlags: [],
+        }).catch(() => {});
       }
       res.json({ success: true });
     });
@@ -114,8 +161,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ==================== USER ROUTES ====================
   
-  // Get all users (admin only)
-  app.get("/api/users", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+  // Get all users (admin e manager)
+  app.get("/api/users", requireAuth, requireAdminOrManager, async (req: Request, res: Response) => {
     try {
       const users = await storage.getAllUsers();
       res.json(users.map(u => ({ ...u, password: undefined }))); // Remove passwords
@@ -128,17 +175,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Update user (admin only)
   app.patch("/api/users/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
+      const previous = await storage.getUser(req.params.id);
       const updated = await storage.updateUser(req.params.id, req.body);
       if (!updated) {
         return res.status(404).json({ error: "Usuário não encontrado" });
       }
-
+      const ctx = getAuditContext(req);
+      const previousSnapshot = previous ? { name: previous.name, username: previous.username, role: previous.role } : undefined;
+      const riskFlags = computeRiskFlags({
+        action: "UPDATE_USER",
+        details: { changes: req.body },
+        previousSnapshot,
+      });
       await storage.createAuditLog({
         userId: req.session.userId!,
         action: "UPDATE_USER",
         entityType: "user",
         entityId: updated.id,
-        details: { changes: req.body }
+        details: { changes: req.body },
+        previousSnapshot: previousSnapshot ?? undefined,
+        ...ctx,
+        riskFlags,
       });
 
       res.json(updated);
@@ -157,13 +214,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       await storage.deleteUser(req.params.id);
-
+      const ctx = getAuditContext(req);
       await storage.createAuditLog({
         userId: req.session.userId!,
         action: "DELETE_USER",
         entityType: "user",
         entityId: req.params.id,
-        details: { username: userToDelete.username }
+        details: { username: userToDelete.username },
+        ...ctx,
+        riskFlags: computeRiskFlags({ action: "DELETE_USER", details: { username: userToDelete.username } }),
       });
 
       res.json({ success: true });
@@ -179,13 +238,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const data = insertUserSchema.parse(req.body);
       const newUser = await storage.createUser(data);
 
-      // Create audit log
+      const ctx = getAuditContext(req);
       await storage.createAuditLog({
         userId: req.session.userId!,
         action: "CREATE_USER",
         entityType: "user",
         entityId: newUser.id,
-        details: { username: newUser.username, role: newUser.role }
+        details: { username: newUser.username, role: newUser.role },
+        ...ctx,
+        riskFlags: computeRiskFlags({ action: "CREATE_USER", details: { username: newUser.username, role: newUser.role } }),
       });
 
       res.json({ ...newUser, password: undefined });
@@ -215,13 +276,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const data = insertCategorySchema.parse(req.body);
       const newCategory = await storage.createCategory(data);
 
-      // Audit log
+      const ctx = getAuditContext(req);
       await storage.createAuditLog({
         userId: req.session.userId!,
         action: "CREATE_CATEGORY",
         entityType: "category",
         entityId: newCategory.id,
-        details: { name: newCategory.name }
+        details: { name: newCategory.name },
+        ...ctx,
+        riskFlags: computeRiskFlags({ action: "CREATE_CATEGORY", details: { name: newCategory.name } }),
       });
 
       res.json(newCategory);
@@ -239,12 +302,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.deleteCategory(req.params.id);
 
       // Audit log
+      const ctx = getAuditContext(req);
       await storage.createAuditLog({
         userId: req.session.userId!,
         action: "DELETE_CATEGORY",
         entityType: "category",
         entityId: req.params.id,
-        details: {}
+        details: {},
+        ...ctx,
+        riskFlags: computeRiskFlags({ action: "DELETE_CATEGORY" }),
       });
 
       res.json({ success: true });
@@ -266,6 +332,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/products/by-barcode/:barcode", async (req: Request, res: Response) => {
+    try {
+      const product = await storage.getProductByBarcode(req.params.barcode);
+      if (!product) return res.status(404).json({ error: "Produto não encontrado" });
+      res.json(product);
+    } catch (error) {
+      console.error("Get product by barcode error:", error);
+      res.status(500).json({ error: "Erro ao buscar produto" });
+    }
+  });
+
   app.post("/api/products", requireAuth, requireAdminOrManager, async (req: Request, res: Response) => {
     try {
       // Check edit permission
@@ -277,6 +354,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const data = insertProductSchema.parse(req.body);
+      if (!data.barcode?.trim() && data.sku?.trim()) data.barcode = data.sku.trim();
+      if (!data.sku?.trim() && data.barcode?.trim()) data.sku = data.barcode.trim();
       const newProduct = await storage.createProduct(data);
 
       wsEvents.product(newProduct);
@@ -289,13 +368,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         await storage.incrementDailyEdits(req.session.userId!, today);
       }
 
-      // Audit log
+      const ctx = getAuditContext(req);
       await storage.createAuditLog({
         userId: req.session.userId!,
         action: "CREATE_PRODUCT",
         entityType: "product",
         entityId: newProduct.id,
-        details: { name: newProduct.name, sku: newProduct.sku }
+        details: { name: newProduct.name, sku: newProduct.sku },
+        ...ctx,
+        riskFlags: computeRiskFlags({ action: "CREATE_PRODUCT", details: { name: newProduct.name, sku: newProduct.sku } }),
       });
 
       // Create notifications for sellers when admin creates product
@@ -328,6 +409,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      const previous = await storage.getProduct(req.params.id);
       const updated = await storage.updateProduct(req.params.id, req.body);
       
       if (!updated) {
@@ -340,13 +422,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         await storage.incrementDailyEdits(req.session.userId!, today);
       }
 
-      // Audit log
+      const ctx = getAuditContext(req);
+      const previousSnapshot = previous ? { name: previous.name, sku: previous.sku, price: previous.price, stock: previous.stock } : undefined;
+      const riskFlags = computeRiskFlags({
+        action: "UPDATE_PRODUCT",
+        details: { changes: req.body },
+        previousSnapshot,
+      });
       await storage.createAuditLog({
         userId: req.session.userId!,
         action: "UPDATE_PRODUCT",
         entityType: "product",
         entityId: updated.id,
-        details: { changes: req.body }
+        details: { changes: req.body },
+        previousSnapshot: previousSnapshot ?? undefined,
+        ...ctx,
+        riskFlags,
       });
 
       // Create notifications for sellers when admin updates product
@@ -390,7 +481,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const updated = await storage.updateProduct(req.params.id, updateData);
 
-      // Audit log
+      const ctx = getAuditContext(req);
       await storage.createAuditLog({
         userId: req.session.userId!,
         action: "INCREASE_STOCK",
@@ -402,7 +493,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           previousStock: product.stock,
           newStock: String(newStock),
           ...(price && { priceChanged: true, previousPrice: product.price, newPrice: String(price) })
-        }
+        },
+        ...ctx,
+        riskFlags: computeRiskFlags({ action: "INCREASE_STOCK", details: { productName: product.name, quantityAdded: quantity } }),
       });
 
       // Notify all users
@@ -433,14 +526,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       await storage.deleteProduct(req.params.id);
-
-      // Audit log
+      const ctx = getAuditContext(req);
       await storage.createAuditLog({
         userId: req.session.userId!,
         action: "DELETE_PRODUCT",
         entityType: "product",
         entityId: req.params.id,
-        details: { name: product.name }
+        details: { name: product.name },
+        ...ctx,
+        riskFlags: computeRiskFlags({ action: "DELETE_PRODUCT", details: { name: product.name } }),
       });
 
       // Notify all users
@@ -458,6 +552,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Delete product error:", error);
       res.status(500).json({ error: "Erro ao deletar produto" });
+    }
+  });
+
+  app.post("/api/products/import", requireAuth, requireAdminOrManager, async (req: Request, res: Response) => {
+    try {
+      const { products: items, mode } = req.body;
+      if (!Array.isArray(items) || !mode || !['merge', 'reset'].includes(mode)) {
+        return res.status(400).json({ error: "Body deve ter { products: [...], mode: 'merge' | 'reset' }" });
+      }
+      const ctx = getAuditContext(req);
+      const result = await storage.bulkImportProducts(
+        items.map((p: any) => ({
+          name: String(p.name || ''),
+          sku: String(p.sku || ''),
+          price: (p.price != null && String(p.price).trim() !== '') ? String(p.price) : '',
+          costPrice: (p.costPrice != null && String(p.costPrice).trim() !== '') ? String(p.costPrice) : '',
+          stock: (p.stock != null && String(p.stock).trim() !== '') ? String(p.stock) : '',
+          minStock: (p.minStock != null && String(p.minStock).trim() !== '') ? String(p.minStock) : '',
+          unit: String(p.unit || 'un'),
+          categoryId: p.categoryId || null,
+          image: p.image || '',
+        })),
+        mode,
+        req.session.userId!,
+        { ...ctx, riskFlags: computeRiskFlags({ action: 'PRODUCT_IMPORT', details: { added: items.length, mode } }) }
+      );
+      wsEvents.product(null);
+      wsEvents.invalidate(['/api/products', 'notifications', '/api/notifications']);
+      await storage.createNotification({
+        userId: null,
+        type: "success",
+        message: `Importação: ${result.added} adicionados, ${result.updated} atualizados${result.removed ? `, ${result.removed} removidos` : ''}`,
+        metadata: { action: "product_import" }
+      });
+      res.json(result);
+    } catch (error) {
+      console.error("Import products error:", error);
+      res.status(500).json({ error: "Erro ao importar produtos" });
     }
   });
 
@@ -508,17 +640,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
         preview
       });
 
-      // Audit log
+      const previewData = newSale.preview as { items?: Array<{ productId: string; productName: string; quantity: number; priceAtSale: number; productUnit?: string }>; subtotal?: number; discountAmount?: number; total?: number; amountReceived?: number; change?: number } | null;
+      const itemsForAudit = (previewData?.items ?? newSale.items.map((it: { productId: string; quantity: number; priceAtSale: number }) => ({
+        productId: it.productId,
+        productName: null,
+        quantity: it.quantity,
+        priceAtSale: it.priceAtSale,
+        subtotal: Number(it.priceAtSale) * it.quantity,
+      }))).map((it: any) => ({
+        productId: it.productId,
+        productName: it.productName ?? undefined,
+        quantity: it.quantity,
+        priceAtSale: it.priceAtSale,
+        subtotal: it.subtotal ?? Number(it.priceAtSale) * it.quantity,
+      }));
+      const subtotal = previewData?.subtotal ?? itemsForAudit.reduce((s: number, i: any) => s + (i.subtotal ?? 0), 0);
+      const discountAmount = previewData?.discountAmount ?? 0;
+      const total = Number(newSale.total);
+      const saleDetails = {
+        items: itemsForAudit,
+        subtotal,
+        discountAmount,
+        total,
+        amountReceived: newSale.amountReceived != null ? Number(newSale.amountReceived) : undefined,
+        change: newSale.change != null ? Number(newSale.change) : undefined,
+        paymentMethod: newSale.paymentMethod,
+        itemCount: newSale.items.length,
+      };
+      const ctx = getAuditContext(req);
+      const riskFlags = computeRiskFlags({
+        action: "CREATE_SALE",
+        details: saleDetails,
+      });
       await storage.createAuditLog({
         userId: req.session.userId!,
         action: "CREATE_SALE",
         entityType: "sale",
         entityId: newSale.id,
-        details: { 
-          total: newSale.total,
-          paymentMethod: newSale.paymentMethod,
-          itemCount: newSale.items.length
-        }
+        details: saleDetails,
+        ...ctx,
+        riskFlags,
       });
 
       // Create notification for the seller (their own action)
@@ -563,16 +724,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
           message: "Máximo de 5 devoluções em 2 dias. Contacte o gerente.",
         });
       }
+      const itemsReturned = sale.items.map((it: { productId: string; quantity: number; priceAtSale: number }) => ({
+        productId: it.productId,
+        quantity: it.quantity,
+        priceAtSale: it.priceAtSale,
+        subtotal: Number(it.priceAtSale) * it.quantity,
+      }));
       for (const item of sale.items) {
         await storage.restoreStock(item.productId, item.quantity);
       }
       await storage.createSaleReturn({ saleId, userId: req.session.userId! });
+      const returnDetails = {
+        total: sale.total,
+        itemCount: sale.items.length,
+        itemsReturned,
+        stockImpact: itemsReturned.map((it: any) => ({ productId: it.productId, quantityRestored: it.quantity })),
+      };
+      const ctx = getAuditContext(req);
+      const riskFlags = computeRiskFlags({
+        action: "SALE_RETURN",
+        details: returnDetails,
+        returnsCountLast2Days,
+      });
       await storage.createAuditLog({
         userId: req.session.userId!,
         action: "SALE_RETURN",
         entityType: "sale",
         entityId: sale.id,
-        details: { total: sale.total, itemCount: sale.items.length },
+        details: returnDetails,
+        ...ctx,
+        riskFlags,
       });
       await storage.createNotification({
         userId: null,
@@ -595,6 +776,145 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Get returns limit error:", error);
       res.status(500).json({ error: "Erro ao verificar limite" });
+    }
+  });
+
+  // ==================== NETWORK (IP dinâmico) ====================
+  app.get("/api/network/local-access", (req: Request, res: Response) => {
+    try {
+      const port = parseInt(String(process.env.PORT || req.get('host')?.split(':')[1] || 9001), 10);
+      const protocol = (process.env.HTTPS === "1" || process.env.HTTPS === "true") ? "https" : (req.protocol || "http");
+      const ips: string[] = [];
+      const nets = os.networkInterfaces();
+      for (const name of Object.keys(nets)) {
+        for (const net of nets[name] || []) {
+          const isIPv4 = net.family === 'IPv4' || (net as { family?: number }).family === 4;
+          if (isIPv4 && !net.internal) ips.push(net.address);
+        }
+      }
+      const baseUrl = ips.length > 0 ? `${protocol}://${ips[0]}:${port}` : null;
+      res.json({ baseUrl, ips, port });
+    } catch (error) {
+      console.error("Network local-access error:", error);
+      res.status(500).json({ error: "Erro ao obter IP" });
+    }
+  });
+
+  // ==================== SCANNER (REMOTE) ROUTES ====================
+  app.post("/api/scanner/start", requireAuth, (req: Request, res: Response) => {
+    try {
+      const ua = (req.headers['user-agent'] as string) || '';
+      const { token } = createScannerToken(req.session.userId!, req.session.name || req.session.username || '', ua);
+      const port = parseInt(String(process.env.PORT || req.get('host')?.split(':')[1] || 9001), 10);
+      const protocol = (process.env.HTTPS === "1" || process.env.HTTPS === "true") ? "https" : (req.protocol || "http");
+      const origin = req.get('origin') || req.get('referer')?.replace(/\/[^/]*$/, '') || `${protocol}://${req.get('host')}`;
+      let baseUrl = origin;
+      const nets = os.networkInterfaces();
+      outer: for (const name of Object.keys(nets)) {
+        for (const net of nets[name] || []) {
+          const isIPv4 = net.family === 'IPv4' || (net as { family?: number }).family === 4;
+          if (isIPv4 && !net.internal) {
+            baseUrl = `${protocol}://${net.address}:${port}`;
+            break outer;
+          }
+        }
+      }
+      const url = `${baseUrl}/scanner/${token}`;
+      res.json({ token, url });
+    } catch (error) {
+      console.error("Scanner start error:", error);
+      res.status(500).json({ error: "Erro ao gerar link do scanner" });
+    }
+  });
+
+  app.get("/api/scanner/poll/:token", requireAuth, (req: Request, res: Response) => {
+    try {
+      const barcodes = consumeBarcodes(req.params.token, req.session.userId!);
+      res.json({ barcodes });
+    } catch (error) {
+      console.error("Scanner poll error:", error);
+      res.status(500).json({ error: "Erro ao obter códigos" });
+    }
+  });
+
+  app.post("/api/scanner/send", async (req: Request, res: Response) => {
+    try {
+      const { token, barcode } = req.body;
+      const ua = (req.headers['user-agent'] as string) || '';
+      if (!token || typeof barcode !== 'string' || !barcode.trim()) {
+        return res.status(400).json({ error: "token e barcode são obrigatórios" });
+      }
+      const ok = pushBarcode(token, barcode.trim(), ua);
+      if (!ok) return res.status(404).json({ error: "Link expirado ou inválido" });
+      const product = await storage.getProductByBarcode(barcode.trim());
+      res.json({ ok: true, product: product ? { name: product.name } : undefined });
+    } catch (error) {
+      console.error("Scanner send error:", error);
+      res.status(500).json({ error: "Erro ao enviar código" });
+    }
+  });
+
+  app.post("/api/scanner/ping", (req: Request, res: Response) => {
+    try {
+      const { token } = req.body;
+      const ua = (req.headers['user-agent'] as string) || '';
+      if (!token) return res.status(400).json({ error: "token obrigatório" });
+      const session = pingToken(token, ua);
+      if (!session) return res.status(404).json({ error: "Link expirado ou inválido" });
+      res.json({
+        ok: true,
+        expiresIn: Math.max(0, Math.floor((TOKEN_TTL_MS - (Date.now() - session.createdAt)) / 1000)),
+        deviceType: session.deviceType,
+      });
+    } catch (error) {
+      console.error("Scanner ping error:", error);
+      res.status(500).json({ error: "Erro" });
+    }
+  });
+
+  app.get("/api/scanner/sessions", requireAuth, (req: Request, res: Response) => {
+    try {
+      const sessions = listSessions(req.session.userId!);
+      res.json(sessions);
+    } catch (error) {
+      console.error("Scanner sessions error:", error);
+      res.status(500).json({ error: "Erro ao listar sessões" });
+    }
+  });
+
+  app.post("/api/scanner/revoke/:token", requireAuth, (req: Request, res: Response) => {
+    try {
+      const ok = revokeToken(req.params.token, req.session.userId!);
+      if (!ok) return res.status(404).json({ error: "Sessão não encontrada ou já expirada" });
+      res.json({ ok: true });
+    } catch (error) {
+      console.error("Scanner revoke error:", error);
+      res.status(500).json({ error: "Erro ao revogar" });
+    }
+  });
+
+  app.post("/api/scanner/renew", requireAuth, (req: Request, res: Response) => {
+    try {
+      const { token } = req.body;
+      if (!token) return res.status(400).json({ error: "token obrigatório" });
+      const result = renewToken(token, req.session.userId!, req.session.name || req.session.username || '');
+      if (!result) return res.status(404).json({ error: "Sessão não encontrada ou já expirada" });
+      const port = parseInt(String(process.env.PORT || req.get('host')?.split(':')[1] || 9001), 10);
+      const protocol = (process.env.HTTPS === "1" || process.env.HTTPS === "true") ? "https" : (req.protocol || "http");
+      const origin = req.get('origin') || req.get('referer')?.replace(/\/[^/]*$/, '') || `${protocol}://${req.get('host')}`;
+      let baseUrl = origin;
+      const nets = os.networkInterfaces();
+      outer: for (const name of Object.keys(nets)) {
+        for (const net of nets[name] || []) {
+          const isIPv4 = net.family === 'IPv4' || (net as { family?: number }).family === 4;
+          if (isIPv4 && !net.internal) { baseUrl = `${protocol}://${net.address}:${port}`; break outer; }
+        }
+      }
+      const url = `${baseUrl}/scanner/${result.token}`;
+      res.json({ token: result.token, url });
+    } catch (error) {
+      console.error("Scanner renew error:", error);
+      res.status(500).json({ error: "Erro ao renovar" });
     }
   });
 
@@ -659,18 +979,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.put("/api/settings/receipt", requireAuth, requireAdmin, (req: Request, res: Response) => {
+  app.put("/api/settings/receipt", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      const { paperSize, printOnConfirm } = req.body as Partial<ReceiptSettings>;
+      const { paperSize, printOnConfirm, branding } = req.body as Partial<ReceiptSettings>;
       const current = getReceiptSettings();
       const settings: ReceiptSettings = {
         paperSize: paperSize ?? current.paperSize,
         printOnConfirm: printOnConfirm ?? current.printOnConfirm,
+        branding: branding !== undefined ? { ...current.branding, ...branding } : current.branding,
       };
       if (paperSize && !['80x60', '80x70', '80x80', 'a6'].includes(paperSize)) {
         return res.status(400).json({ error: "Tamanho de papel inválido" });
       }
       saveReceiptSettings(settings);
+      const ctx = getAuditContext(req);
+      await storage.createAuditLog({
+        userId: req.session.userId!,
+        action: "RECEIPT_SETTINGS_UPDATED",
+        entityType: "settings",
+        entityId: null,
+        details: { previous: current, updated: settings },
+        ...ctx,
+        riskFlags: [],
+      });
       res.json(settings);
     } catch (error) {
       console.error("Save receipt settings error:", error);
@@ -689,7 +1020,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!sale) return res.status(404).json({ error: "Venda não encontrada" });
 
       const user = await storage.getUser(sale.userId);
-      const userName = user?.name ?? "Desconhecido";
+      const sellerName = user?.name ?? "Desconhecido";
 
       const preview = sale.preview as {
         items?: Array<{ productName?: string; quantity?: number; productUnit?: string; priceAtSale?: number }>;
@@ -737,7 +1068,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const receiptData = {
         saleId: sale.id,
         createdAt: new Date(sale.createdAt),
-        userName,
+        sellerName,
         items: receiptItems,
         subtotal: Number(preview?.subtotal) ?? totalNum,
         discountAmount: Number(preview?.discountAmount) ?? 0,
@@ -748,7 +1079,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       };
 
       const settings = getReceiptSettings();
-      const savedPath = saveReceiptToDisk(receiptData, settings.paperSize);
+      const savedPath = saveReceiptToDisk(receiptData, settings.paperSize, settings);
       res.json({ success: true, path: savedPath });
     } catch (error) {
       console.error("Save receipt error:", error);
@@ -799,7 +1130,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const receiptData = {
         saleId: sale.id,
         createdAt: new Date(sale.createdAt),
-        userName: user?.name ?? "Desconhecido",
+        sellerName: user?.name ?? "Desconhecido",
         items,
         subtotal: Number(preview?.subtotal) ?? totalNum,
         discountAmount: Number(preview?.discountAmount) ?? 0,
@@ -810,12 +1141,64 @@ export async function registerRoutes(app: Express): Promise<Server> {
       };
 
       const settings = getReceiptSettings();
-      const html = generateReceiptHTML(receiptData, settings.paperSize);
+      const html = generateReceiptHTML(receiptData, settings.paperSize, settings);
       res.setHeader("Content-Type", "text/html; charset=utf-8");
       res.send(html);
     } catch (error) {
       console.error("Receipt preview error:", error);
       res.status(500).send("Erro ao gerar recibo");
+    }
+  });
+
+  // Obter recibo por saleId (arquivo guardado) - verifica que a venda existe
+  app.get("/api/receipts/file/:saleId", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const sale = await storage.getSaleById(req.params.saleId);
+      if (!sale) return res.status(404).send("Venda não encontrada");
+      if (!receiptExists(sale.id, new Date(sale.createdAt))) {
+        const ctxDenied = getAuditContext(req);
+        await storage.createAuditLog({
+          userId: req.session.userId!,
+          action: "RECEIPT_ACCESS_DENIED",
+          entityType: "receipt",
+          entityId: sale.id,
+          details: { reason: "file_not_found" },
+          ...ctxDenied,
+          riskFlags: [],
+        });
+        return res.status(404).send("Recibo não encontrado. O ficheiro pode ter sido removido.");
+      }
+      const ctxView = getAuditContext(req);
+      await storage.createAuditLog({
+        userId: req.session.userId!,
+        action: "RECEIPT_VIEWED",
+        entityType: "receipt",
+        entityId: sale.id,
+        details: {},
+        ...ctxView,
+        riskFlags: [],
+      });
+      const absPath = getReceiptAbsolutePath(sale.id, new Date(sale.createdAt));
+      const asAttachment = req.query.download === '1';
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      res.setHeader("Content-Disposition", asAttachment
+        ? `attachment; filename="recibo-${sale.id.slice(0, 8)}.html"`
+        : `inline; filename="recibo-${sale.id.slice(0, 8)}.html"`);
+      res.sendFile(absPath);
+    } catch (error) {
+      console.error("Receipt file error:", error);
+      res.status(500).send("Erro ao obter recibo");
+    }
+  });
+
+  // Listar ficheiros de recibos (admin) - pastas ano/mês/semana
+  app.get("/api/receipts/list", requireAuth, requireAdmin, (_req: Request, res: Response) => {
+    try {
+      const files = listReceiptFiles();
+      res.json(files);
+    } catch (error) {
+      console.error("List receipts error:", error);
+      res.status(500).json({ error: "Erro ao listar recibos" });
     }
   });
 
@@ -853,6 +1236,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ==================== AUDIT LOG ROUTES ====================
   
+  app.get("/api/audit-logs/recent-imports", requireAuth, requireAdminOrManager, async (req: Request, res: Response) => {
+    try {
+      const limit = Math.min(parseInt(req.query.limit as string) || 20, 50);
+      const logs = await storage.getRecentProductImports(limit);
+      res.json(logs);
+    } catch (error) {
+      console.error("Get recent imports error:", error);
+      res.status(500).json({ error: "Erro ao buscar importações recentes" });
+    }
+  });
+
+  app.get("/api/audit-logs/imports", requireAuth, requireAdminOrManager, async (req: Request, res: Response) => {
+    try {
+      const startDate = req.query.startDate as string;
+      const endDate = req.query.endDate as string;
+      if (!startDate || !endDate) {
+        return res.status(400).json({ error: "startDate e endDate são obrigatórios (YYYY-MM-DD)" });
+      }
+      const logs = await storage.getProductImportsByDateRange(startDate, endDate);
+      res.json(logs);
+    } catch (error) {
+      console.error("Get imports by date error:", error);
+      res.status(500).json({ error: "Erro ao buscar importações" });
+    }
+  });
+
   app.get("/api/audit-logs", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const logs = await storage.getAllAuditLogs();
@@ -867,28 +1276,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { userId, startDate, endDate, startHour, endHour } = req.body;
       
-      if (!userId || !startDate || !endDate) {
-        return res.status(400).json({ error: "userId, startDate e endDate são obrigatórios" });
+      if (!startDate || !endDate) {
+        return res.status(400).json({ error: "startDate e endDate são obrigatórios" });
       }
 
-      const logs = await storage.getAuditLogsByUserAndDateRange(
-        userId,
-        startDate,
-        endDate,
-        startHour,
-        endHour
-      );
+      const logs = userId && userId !== 'all'
+        ? await storage.getAuditLogsByUserAndDateRange(userId, startDate, endDate, startHour, endHour)
+        : await storage.getAuditLogsByDateRange(startDate, endDate, startHour, endHour, null);
 
       // Convert to CSV if requested
       if (req.query.format === 'csv') {
-        const headers = ['ID', 'Ação', 'Tipo', 'ID Entidade', 'Detalhes', 'Data/Hora'];
+        const headers = ['ID', 'Data/Hora', 'UserId', 'Ação', 'Tipo Entidade', 'ID Entidade', 'Detalhes (JSON)', 'IP', 'User-Agent', 'RiskFlags', 'PreviousSnapshot'];
         const rows = logs.map(log => [
           log.id,
+          new Date(log.createdAt).toLocaleString('pt-BR'),
+          log.userId ?? '-',
           log.action,
           log.entityType,
           log.entityId || '-',
           JSON.stringify(log.details || {}),
-          new Date(log.createdAt).toLocaleString('pt-BR')
+          (log as any).ipAddress ?? '-',
+          (log as any).userAgent ?? '-',
+          Array.isArray((log as any).riskFlags) ? (log as any).riskFlags.join(';') : '-',
+          (log as any).previousSnapshot != null ? JSON.stringify((log as any).previousSnapshot) : '-',
         ]);
         
         const csv = [headers, ...rows]
@@ -1151,12 +1561,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         metadata: { orderId: updated.id }
       });
 
+      const ctx = getAuditContext(req);
       await storage.createAuditLog({
         userId: req.session.userId!,
         action: "APPROVE_ORDER",
         entityType: "order",
         entityId: updated.id,
-        details: { orderCode: updated.orderCode, total: updated.total }
+        details: { orderCode: updated.orderCode, total: updated.total },
+        ...ctx,
+        riskFlags: computeRiskFlags({ action: "APPROVE_ORDER", details: { orderCode: updated.orderCode } }),
       });
 
       res.json(updated);
@@ -1182,12 +1595,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         metadata: { orderId: updated.id }
       });
 
+      const ctx = getAuditContext(req);
       await storage.createAuditLog({
         userId: req.session.userId!,
         action: "CANCEL_ORDER",
         entityType: "order",
         entityId: updated.id,
-        details: { orderCode: updated.orderCode }
+        details: { orderCode: updated.orderCode },
+        ...ctx,
+        riskFlags: computeRiskFlags({ action: "CANCEL_ORDER", details: { orderCode: updated.orderCode } }),
       });
 
       res.json(updated);
@@ -1235,12 +1651,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         metadata: { orderId: updated.id }
       });
 
+      const ctx = getAuditContext(req);
       await storage.createAuditLog({
         userId: req.session.userId!,
         action: "REOPEN_ORDER",
         entityType: "order",
         entityId: updated.id,
-        details: { orderCode: updated.orderCode }
+        details: { orderCode: updated.orderCode },
+        ...ctx,
+        riskFlags: computeRiskFlags({ action: "REOPEN_ORDER", details: { orderCode: updated.orderCode } }),
       });
 
       res.json(updated);
@@ -1295,8 +1714,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  const httpServer = createServer(app);
-  attachWebSocket(httpServer);
+  const useHttps = process.env.HTTPS === "1" || process.env.HTTPS === "true";
+  let server: Server;
 
-  return httpServer;
+  if (useHttps) {
+    const altNames: Array<{ type: 2; value: string } | { type: 7; ip: string }> = [
+      { type: 2, value: "localhost" },
+      { type: 7, ip: "127.0.0.1" },
+    ];
+    const nets = os.networkInterfaces();
+    for (const name of Object.keys(nets)) {
+      for (const net of nets[name] || []) {
+        const isIPv4 = net.family === "IPv4" || (net as { family?: number }).family === 4;
+        if (isIPv4 && !net.internal) altNames.push({ type: 7, ip: net.address });
+      }
+    }
+    const pems = await selfsigned.generate(
+      [{ name: "commonName", value: "localhost" }],
+      {
+        notAfterDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+        extensions: [{ name: "subjectAltName", altNames }],
+      }
+    );
+    server = createHttpsServer({ key: pems.private, cert: pems.cert }, app);
+  } else {
+    server = createHttpServer(app);
+  }
+
+  attachWebSocket(server);
+  return server;
 }

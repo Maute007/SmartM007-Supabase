@@ -3,8 +3,9 @@ import { receiptsApi } from '@/lib/api';
 
 export function useReceiptPrint() {
   const printReceipt = useCallback(async (saleId: string) => {
-    const res = await fetch(`/api/receipts/preview/${saleId}`, {
-      credentials: 'include'
+    const res = await fetch(`/api/receipts/preview/${saleId}?t=${Date.now()}`, {
+      credentials: 'include',
+      cache: 'no-store'
     });
     if (!res.ok) {
       const text = await res.text();

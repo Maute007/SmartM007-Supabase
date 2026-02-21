@@ -1,6 +1,6 @@
 import { useAuth } from '@/lib/auth';
 import { useCart } from '@/lib/cart';
-import { useState, useMemo, useRef } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
@@ -9,9 +9,10 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Search, ShoppingCart, Trash2, Plus, Minus, CreditCard, Banknote, QrCode, AlertCircle, ShoppingBag, ArrowRight, Percent, Scale, Check, LayoutGrid, List, Printer } from 'lucide-react';
+import { Search, ShoppingCart, Trash2, Plus, Minus, CreditCard, Banknote, QrCode, AlertCircle, ShoppingBag, ArrowRight, Percent, Scale, Check, LayoutGrid, List, Printer, ScanLine, Smartphone, Camera, RefreshCw, Monitor } from 'lucide-react';
+import { BarcodeCameraScan } from '@/components/BarcodeCameraScan';
 import { formatCurrency, cn } from '@/lib/utils';
-import { Product, productsApi, categoriesApi, salesApi, receiptSettingsApi } from '@/lib/api';
+import { Product, productsApi, categoriesApi, salesApi, receiptSettingsApi, scannerApi, networkApi, ScannerSessionInfo } from '@/lib/api';
 import { useReceiptPrint } from '@/hooks/useReceiptPrint';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from '@/hooks/use-toast';
@@ -86,16 +87,44 @@ export default function POS() {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
   const [printReceiptOnConfirm, setPrintReceiptOnConfirm] = useState(false);
   const printReceiptRef = useRef(false);
+  const [cameraScanOpen, setCameraScanOpen] = useState(false);
+  const [remoteScannerOpen, setRemoteScannerOpen] = useState(false);
+  const [scannerToken, setScannerToken] = useState<string | null>(null);
+  const [scannerUrl, setScannerUrl] = useState<string>('');
+  const [scannerSessions, setScannerSessions] = useState<ScannerSessionInfo[]>([]);
+  const barcodeInputRef = useRef<HTMLInputElement>(null);
 
   const canApplyDiscount = user?.role === 'admin' || user?.role === 'manager';
 
   const filteredProducts = useMemo(() => {
     return products.filter(p => {
-      const matchesSearch = p.name.toLowerCase().includes(search.toLowerCase()) || p.sku.toLowerCase().includes(search.toLowerCase());
+      const searchLower = search.toLowerCase();
+      const matchesSearch =
+        p.name.toLowerCase().includes(searchLower) ||
+        p.sku.toLowerCase().includes(searchLower) ||
+        (p.barcode && p.barcode.toLowerCase().includes(searchLower));
       const matchesCategory = selectedCategory === 'all' || p.categoryId === selectedCategory;
       return matchesSearch && matchesCategory;
     });
   }, [products, search, selectedCategory]);
+
+  const processBarcode = (barcode: string) => {
+    const code = barcode.trim();
+    if (!code) return;
+    const product = products.find(
+      (p) =>
+        (p.barcode && p.barcode === code) ||
+        p.sku === code ||
+        (p.barcode && p.barcode.toLowerCase() === code.toLowerCase()) ||
+        p.sku.toLowerCase() === code.toLowerCase()
+    );
+    if (product) {
+      handleAddProduct(product);
+      setSearch('');
+    } else {
+      toast({ variant: 'destructive', title: 'Item não encontrado', description: `Código ${code} não existe no cadastro.` });
+    }
+  };
 
   const subtotal = cart.reduce((acc, item) => acc + (item.priceAtSale * item.quantity), 0);
   
@@ -258,8 +287,25 @@ export default function POS() {
     );
   }
 
+  const storeName = receiptSettings?.branding?.storeName?.trim() || '';
+  const storeLogo = receiptSettings?.branding?.logoBase64
+    ? (receiptSettings.branding.logoBase64.startsWith('data:') ? receiptSettings.branding.logoBase64 : `data:image/png;base64,${receiptSettings.branding.logoBase64}`)
+    : '';
+
   return (
-    <div className="h-[calc(100dvh-4rem)] md:h-[calc(100vh-8rem)] flex flex-col lg:flex-row gap-3 lg:gap-6 p-3 lg:p-4">
+    <div className="h-[calc(100dvh-4rem)] md:h-[calc(100vh-8rem)] flex flex-col gap-3 lg:gap-4 p-3 lg:p-4">
+      {/* Identidade da loja no topo (quando configurada) */}
+      {(storeName || storeLogo) && (
+        <div className="w-full shrink-0 flex items-center gap-3 px-4 py-2 rounded-xl bg-primary/5 border border-primary/10">
+          {storeLogo && (
+            <div className="h-12 w-12 rounded-lg overflow-hidden bg-white border border-primary/20 flex items-center justify-center shrink-0">
+              <img src={storeLogo} alt="" className="h-full w-full object-contain" />
+            </div>
+          )}
+          {storeName && <span className="font-bold text-lg text-foreground truncate">{storeName}</span>}
+        </div>
+      )}
+      <div className="flex-1 flex flex-col lg:flex-row gap-3 lg:gap-6 min-h-0">
       {/* MOBILE: Tabs Produtos / Carrinho */}
       <div className="lg:hidden shrink-0">
         <div className="flex gap-2">
@@ -428,15 +474,59 @@ export default function POS() {
             ))}
           </div>
           <div className="flex gap-2">
-            <div className="relative flex-1 min-w-0">
-              <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input 
-                placeholder="Buscar por nome ou código..." 
-                className="pl-9 bg-muted/30 text-sm h-10"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                data-testid="input-search-products"
-              />
+            <div className="relative flex-1 min-w-0 flex gap-2">
+              <div className="relative flex-1 min-w-0">
+                <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input 
+                  ref={barcodeInputRef}
+                  placeholder="Buscar ou escanear código de barras..." 
+                  className="pl-9 pr-20 bg-muted/30 text-sm h-10"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && search.trim()) {
+                      processBarcode(search);
+                      setSearch('');
+                      e.preventDefault();
+                    }
+                  }}
+                  data-testid="input-search-products"
+                />
+              </div>
+              <div className="flex gap-1 shrink-0">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-10 w-10"
+                  onClick={() => setCameraScanOpen(true)}
+                  title="Escanear com câmera"
+                >
+                  <Camera className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant={scannerToken ? 'default' : 'outline'}
+                  size="icon"
+                  className={cn("h-10 w-10", scannerToken && "bg-emerald-600 hover:bg-emerald-500")}
+                  onClick={async () => {
+                    if (scannerToken) {
+                      setRemoteScannerOpen(true);
+                      return;
+                    }
+                    try {
+                      const { token, url } = await scannerApi.start();
+                      setScannerToken(token);
+                      setScannerUrl(url);
+                      setRemoteScannerOpen(true);
+                      scannerApi.sessions().then(setScannerSessions).catch(() => setScannerSessions([]));
+                    } catch {
+                      toast({ variant: 'destructive', title: 'Erro', description: 'Não foi possível gerar o link' });
+                    }
+                  }}
+                  title={scannerToken ? "Scanner ativo - abrir painel" : "Usar celular como scanner"}
+                >
+                  <Smartphone className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
             <div className="hidden sm:flex border rounded-md shrink-0">
               <Button
@@ -1037,6 +1127,258 @@ export default function POS() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Poll for remote scanner barcodes - runs in background even when dialog is closed */}
+      {scannerToken && (
+        <RemoteScannerPoller
+          token={scannerToken}
+          onBarcode={processBarcode}
+          onClose={() => {
+            setRemoteScannerOpen(false);
+            setScannerToken(null);
+          }}
+        />
+      )}
+
+      <RemoteScannerDialog
+        open={remoteScannerOpen}
+        onOpenChange={(o) => setRemoteScannerOpen(o)}
+        token={scannerToken}
+        url={scannerUrl}
+        onTokenChange={(t, u) => { setScannerToken(t); setScannerUrl(u || ''); }}
+        onSessionsChange={setScannerSessions}
+      />
+
+      <Dialog open={cameraScanOpen} onOpenChange={setCameraScanOpen}>
+        <DialogContent className="sm:max-w-lg" aria-describedby="camera-scan-desc">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Camera className="h-5 w-5" />
+              Escanear código de barras
+            </DialogTitle>
+            <DialogDescription id="camera-scan-desc">
+              Capte uma foto do código. O sistema processa em escala cinza e extrai o código para verificar.
+            </DialogDescription>
+          </DialogHeader>
+          <BarcodeCameraScan
+            id="pos-camera-scan"
+            onScan={processBarcode}
+            onClose={() => setCameraScanOpen(false)}
+          />
+        </DialogContent>
+      </Dialog>
+      </div>
     </div>
   );
 }
+
+function formatTimeAgo(ms: number): string {
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}min`;
+  const h = Math.floor(m / 60);
+  return `${h}h ${m % 60}min`;
+}
+
+function formatDeviceLabel(s: ScannerSessionInfo): string {
+  const dt = s.deviceType === 'mobile' ? 'Celular' : s.deviceType === 'desktop' ? 'Computador' : 'Dispositivo';
+  const ua = s.userAgent && s.userAgent.length > 0
+    ? (s.userAgent.length > 40 ? s.userAgent.slice(0, 40) + '…' : s.userAgent)
+    : 'N/A';
+  return `${dt} • ${ua}`;
+}
+
+function RemoteScannerDialog({
+  open,
+  onOpenChange,
+  token,
+  url,
+  onTokenChange,
+  onSessionsChange,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  token: string | null;
+  url: string;
+  onTokenChange: (t: string | null, u: string) => void;
+  onSessionsChange: (s: ScannerSessionInfo[]) => void;
+}) {
+  const [sessions, setSessions] = useState<ScannerSessionInfo[]>([]);
+  const [renewing, setRenewing] = useState(false);
+  const [revoking, setRevoking] = useState<string | null>(null);
+  const [baseUrl, setBaseUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (open) {
+      networkApi.getLocalAccess().then((r) => setBaseUrl(r.baseUrl)).catch(() => setBaseUrl(null));
+    }
+  }, [open]);
+
+  const loadSessions = () => {
+    scannerApi.sessions()
+      .then((list) => { setSessions(list); onSessionsChange(list); })
+      .catch(() => { setSessions([]); });
+  };
+
+  useEffect(() => {
+    if (open) loadSessions();
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const t = setInterval(loadSessions, 5000);
+    return () => clearInterval(t);
+  }, [open]);
+
+  const handleRenew = async () => {
+    if (!token) return;
+    setRenewing(true);
+    try {
+      const { token: t, url: u } = await scannerApi.renew(token);
+      onTokenChange(t, u);
+      toast({ title: 'Link renovado', description: 'O link foi estendido por mais 30 minutos.' });
+      loadSessions();
+    } catch (e) {
+      toast({ variant: 'destructive', title: 'Erro', description: e instanceof Error ? e.message : 'Não foi possível renovar' });
+    } finally {
+      setRenewing(false);
+    }
+  };
+
+  const handleRevoke = async (t: string) => {
+    setRevoking(t);
+    try {
+      await scannerApi.revoke(t);
+      toast({ title: 'Sessão revogada' });
+      if (t === token) onTokenChange(null, '');
+      loadSessions();
+    } catch (e) {
+      toast({ variant: 'destructive', title: 'Erro', description: e instanceof Error ? e.message : 'Não foi possível revogar' });
+    } finally {
+      setRevoking(null);
+    }
+  };
+
+  const handleNewLink = async () => {
+    try {
+      const { token: newToken, url: newUrl } = await scannerApi.start();
+      onTokenChange(newToken, newUrl);
+      loadSessions();
+      toast({ title: 'Novo link gerado' });
+    } catch (e) {
+      toast({ variant: 'destructive', title: 'Erro', description: e instanceof Error ? e.message : 'Não foi possível gerar link' });
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg" aria-describedby="remote-scanner-desc">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Smartphone className="h-5 w-5" />
+            Scanner com celular
+          </DialogTitle>
+          <DialogDescription id="remote-scanner-desc">
+            Abra o link no celular para usar a câmera. Gerencie sessões ativas e revogue acessos indesejados.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          {baseUrl && (
+            <p className="text-xs text-muted-foreground">
+              Sistema a correr em: <code className="bg-muted px-1 rounded">{baseUrl}</code>
+            </p>
+          )}
+          {(token && url) ? (
+            <div className="p-3 bg-muted/50 rounded-lg space-y-2">
+              <p className="text-xs text-muted-foreground">Link (copie e abra no celular):</p>
+              {url.startsWith('http://') && (
+                <p className="text-xs text-amber-600 dark:text-amber-500">
+                  Para a câmera funcionar, use HTTPS. Adicione HTTPS=1 ao .env e reinicie (npm run dev).
+                </p>
+              )}
+              <div className="flex gap-2">
+                <Input readOnly value={url} className="font-mono text-xs" />
+                <Button size="sm" variant="outline" onClick={() => { navigator.clipboard.writeText(url); toast({ title: 'Link copiado!' }); }}>
+                  Copiar
+                </Button>
+              </div>
+              <div className="flex gap-2 flex-wrap">
+                <Button size="sm" variant="secondary" onClick={handleRenew} disabled={renewing}>
+                  <RefreshCw className={cn("h-4 w-4", renewing && "animate-spin")} />
+                  Renovar (mais 2h)
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-destructive hover:text-destructive"
+                  onClick={() => { handleRevoke(token); onOpenChange(false); }}
+                >
+                  Desconectar scanner
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <Button onClick={handleNewLink} className="w-full">
+              <Smartphone className="h-4 w-4 mr-2" />
+              Gerar novo link
+            </Button>
+          )}
+
+          <div>
+            <p className="text-sm font-medium mb-2">Sessões ativas</p>
+            {sessions.length === 0 ? (
+              <p className="text-xs text-muted-foreground">Nenhuma sessão ativa.</p>
+            ) : (
+              <ScrollArea className="h-40 rounded-md border p-2">
+                <div className="space-y-2">
+                  {sessions.map((s) => (
+                    <div key={s.token} className="flex items-center justify-between gap-2 p-2 rounded-md bg-muted/30 text-sm">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          {s.deviceType === 'mobile' ? <Smartphone className="h-4 w-4 shrink-0 text-emerald-500" /> : <Monitor className="h-4 w-4 shrink-0 text-amber-500" />}
+                          <span className="truncate" title={s.userAgent}>{formatDeviceLabel(s)}</span>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Último acesso há {formatTimeAgo(Date.now() - s.lastAccess)} • renova a cada ping
+                        </p>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-destructive hover:text-destructive shrink-0"
+                        onClick={() => handleRevoke(s.token)}
+                        disabled={revoking === s.token}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </ScrollArea>
+            )}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Os códigos escaneados no celular são adicionados automaticamente ao carrinho. Revogue sessões suspeitas.
+          </p>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function RemoteScannerPoller({ token, onBarcode, onClose }: { token: string; onBarcode: (b: string) => void; onClose: () => void }) {
+  useEffect(() => {
+    const t = setInterval(async () => {
+      try {
+        const { barcodes } = await scannerApi.poll(token);
+        barcodes.forEach(onBarcode);
+      } catch {
+        onClose();
+      }
+    }, 300);
+    return () => clearInterval(t);
+  }, [token, onBarcode, onClose]);
+  return null;
+}
+

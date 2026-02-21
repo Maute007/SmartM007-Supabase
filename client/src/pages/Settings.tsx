@@ -1,5 +1,5 @@
 import { useAuth } from '@/lib/auth';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -16,12 +16,305 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Shield, UserPlus, Lock, Eye, ShoppingCart, Package, Trash2, Edit, Plus, Users, Printer } from 'lucide-react';
-import { useState } from 'react';
-import { formatCurrency } from '@/lib/utils';
+import { Shield, UserPlus, Lock, Eye, ShoppingCart, Package, Trash2, Edit, Plus, Users, Printer, Store, ImagePlus, Loader2, FolderOpen, FileText, Download, ExternalLink, Wifi, RefreshCw } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { formatCurrency, cn } from '@/lib/utils';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { usersApi, salesApi, productsApi, receiptSettingsApi, type ReceiptPaperSize } from '@/lib/api';
+import { usersApi, salesApi, productsApi, receiptSettingsApi, receiptsApi, networkApi, type ReceiptPaperSize, type ReceiptStoreBranding } from '@/lib/api';
 import { toast } from '@/hooks/use-toast';
+import { Textarea } from '@/components/ui/textarea';
+
+function ReceiptFilesList() {
+  const { data: files = [], isLoading } = useQuery({
+    queryKey: ['/api/receipts/list'],
+    queryFn: receiptsApi.list,
+  });
+
+  const byFolder = files.reduce((acc, f) => {
+    const folder = f.path.split('/').slice(0, -1).join('/') || '/';
+    if (!acc[folder]) acc[folder] = [];
+    acc[folder].push(f);
+    return acc;
+  }, {} as Record<string, typeof files>);
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-8">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (files.length === 0) {
+    return (
+      <div className="text-center py-8 text-muted-foreground rounded-lg border border-dashed">
+        <FileText className="h-12 w-12 mx-auto mb-2 opacity-50" />
+        <p>Nenhum recibo guardado ainda.</p>
+        <p className="text-sm mt-1">Os recibos são criados ao finalizar vendas com impressão ativa.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6 max-h-96 overflow-y-auto">
+      {Object.entries(byFolder).sort().map(([folder, items]) => (
+        <div key={folder} className="space-y-2">
+          <p className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+            <FolderOpen className="h-4 w-4" />
+            {folder || 'raiz'}
+          </p>
+          <div className="space-y-1 pl-4 border-l-2 border-primary/20">
+            {items.map((f) => (
+              <div key={f.path} className="flex items-center justify-between gap-2 py-2 px-2 rounded hover:bg-muted/50 group">
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium truncate">recibo-{f.saleId.slice(0, 8)}.html</p>
+                  <p className="text-xs text-muted-foreground">
+                    {f.createdAt ? new Date(f.createdAt).toLocaleString('pt-BR') : ''}
+                  </p>
+                </div>
+                <div className="flex gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <a href={receiptsApi.getFileUrl(f.saleId)} target="_blank" rel="noopener noreferrer">
+                    <Button variant="ghost" size="sm" className="h-8 px-2">
+                      <ExternalLink className="h-4 w-4" title="Abrir" />
+                    </Button>
+                  </a>
+                  <a href={receiptsApi.getFileUrl(f.saleId, true)} target="_blank" rel="noopener noreferrer">
+                    <Button variant="ghost" size="sm" className="h-8 px-2">
+                      <Download className="h-4 w-4" title="Download" />
+                    </Button>
+                  </a>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+      <p className="text-xs text-muted-foreground pt-2 border-t">
+        Cada recibo está vinculado a uma venda (ID). O histórico de vendas tem ligação direta a cada recibo.
+      </p>
+    </div>
+  );
+}
+
+function NetworkAccessCard() {
+  const { data, isLoading, refetch, isRefetching } = useQuery({
+    queryKey: ['/api/network/local-access'],
+    queryFn: networkApi.getLocalAccess,
+    refetchInterval: false,
+    retry: 1,
+  });
+
+  return (
+    <Card className="border-2 border-primary/10">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2"><Wifi className="h-5 w-5 text-primary" /> Acesso na rede local</CardTitle>
+        <p className="text-sm text-muted-foreground">
+          IP dinâmico atual. Use este endereço no celular ou em outro dispositivo na mesma rede Wi‑Fi. Atualize sempre que o IP mudar.
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {isLoading ? (
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <Loader2 className="h-5 w-5 animate-spin" />
+            <span>A obter endereço...</span>
+          </div>
+        ) : data?.baseUrl ? (
+          <>
+            <div className="flex gap-2 items-center">
+              <Input readOnly value={data.baseUrl} className="font-mono text-sm" />
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => {
+                  navigator.clipboard.writeText(data.baseUrl!);
+                  toast({ title: 'Copiado!', description: 'Endereço copiado para a área de transferência.' });
+                }}
+              >
+                Copiar
+              </Button>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {data.ips.map((ip) => (
+                <Badge key={ip} variant="secondary">{ip}</Badge>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Abra este URL no navegador do celular para aceder ao sistema. O link do scanner é gerado automaticamente com o IP atual.
+            </p>
+          </>
+        ) : (
+          <p className="text-muted-foreground text-sm">Não foi possível obter o IP da rede.</p>
+        )}
+        <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isRefetching}>
+          <RefreshCw className={cn("h-4 w-4 mr-2", isRefetching && "animate-spin")} />
+          Atualizar IP
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ReceiptBrandingForm({
+  branding,
+  onSave,
+  isSaving,
+}: {
+  branding?: ReceiptStoreBranding;
+  onSave: (b: ReceiptStoreBranding) => void;
+  isSaving: boolean;
+}) {
+  const [form, setForm] = useState<ReceiptStoreBranding>({
+    storeName: branding?.storeName ?? '',
+    storeTagline: branding?.storeTagline ?? '',
+    storeAddress: branding?.storeAddress ?? '',
+    storePhone: branding?.storePhone ?? '',
+    storeEmail: branding?.storeEmail ?? '',
+    logoBase64: branding?.logoBase64 ?? '',
+    footerText: branding?.footerText ?? 'Obrigado pela preferência!',
+  });
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (branding != null) {
+      setForm({
+        storeName: branding.storeName ?? '',
+        storeTagline: branding.storeTagline ?? '',
+        storeAddress: branding.storeAddress ?? '',
+        storePhone: branding.storePhone ?? '',
+        storeEmail: branding.storeEmail ?? '',
+        logoBase64: branding.logoBase64 ?? '',
+        footerText: branding.footerText ?? 'Obrigado pela preferência!',
+      });
+    }
+  }, [branding]);
+
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !file.type.startsWith('image/')) {
+      toast({ variant: 'destructive', title: 'Erro', description: 'Selecione uma imagem (PNG, JPG, etc.)' });
+      return;
+    }
+    if (file.size > 3 * 1024 * 1024) {
+      toast({ variant: 'destructive', title: 'Erro', description: 'Imagem muito grande. Use até 3MB.' });
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+      setForm((f) => ({ ...f, logoBase64: dataUrl }));
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const removeLogo = () => setForm((f) => ({ ...f, logoBase64: '' }));
+
+  const handleSave = () => {
+    onSave(form);
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="space-y-2">
+          <Label>Logo</Label>
+          <div className="flex items-center gap-6">
+            <div className="h-36 w-36 min-h-[9rem] min-w-[9rem] rounded-xl border-2 border-dashed border-muted-foreground/30 flex items-center justify-center overflow-hidden bg-muted/30">
+              {form.logoBase64 ? (
+                <img src={form.logoBase64.startsWith('data:') ? form.logoBase64 : `data:image/png;base64,${form.logoBase64}`} alt="Logo" className="h-full w-full object-contain" />
+              ) : (
+                <ImagePlus className="h-12 w-12 text-muted-foreground" />
+              )}
+            </div>
+            <div className="flex flex-col gap-2">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                className="hidden"
+                onChange={handleLogoUpload}
+              />
+              <Button type="button" variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}>
+                Carregar logo
+              </Button>
+              {form.logoBase64 && (
+                <Button type="button" variant="ghost" size="sm" className="text-destructive" onClick={removeLogo}>
+                  Remover
+                </Button>
+              )}
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground">PNG ou JPG, máx. 3MB. Recomendado: quadrado, fundo transparente.</p>
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="storeName">Nome da Loja</Label>
+          <Input
+            id="storeName"
+            placeholder="Ex: Mercearia do João"
+            value={form.storeName}
+            onChange={(e) => setForm((f) => ({ ...f, storeName: e.target.value }))}
+          />
+        </div>
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="space-y-2">
+          <Label htmlFor="storeTagline">Slogan ou Tagline</Label>
+          <Input
+            id="storeTagline"
+            placeholder="Ex: Soluções em Negócios"
+            value={form.storeTagline}
+            onChange={(e) => setForm((f) => ({ ...f, storeTagline: e.target.value }))}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="storePhone">Telefone</Label>
+          <Input
+            id="storePhone"
+            placeholder="Ex: +258 84 123 4567"
+            value={form.storePhone}
+            onChange={(e) => setForm((f) => ({ ...f, storePhone: e.target.value }))}
+          />
+        </div>
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="storeAddress">Endereço</Label>
+        <Input
+          id="storeAddress"
+          placeholder="Ex: Av. Principal, 123 - Maputo"
+          value={form.storeAddress}
+          onChange={(e) => setForm((f) => ({ ...f, storeAddress: e.target.value }))}
+        />
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="space-y-2">
+          <Label htmlFor="storeEmail">Email</Label>
+          <Input
+            id="storeEmail"
+            type="email"
+            placeholder="Ex: contacto@minhaloja.co.mz"
+            value={form.storeEmail}
+            onChange={(e) => setForm((f) => ({ ...f, storeEmail: e.target.value }))}
+          />
+        </div>
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="footerText">Texto do rodapé</Label>
+        <Textarea
+          id="footerText"
+          placeholder="Ex: Obrigado pela preferência!&#10;Volte sempre."
+          value={form.footerText}
+          onChange={(e) => setForm((f) => ({ ...f, footerText: e.target.value }))}
+          rows={2}
+          className="resize-none"
+        />
+        <p className="text-xs text-muted-foreground">Use Enter para quebras de linha. Aparece no final do recibo.</p>
+      </div>
+      <Button onClick={handleSave} disabled={isSaving}>
+        {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+        Salvar identidade da loja
+      </Button>
+    </div>
+  );
+}
 
 export default function SettingsPage() {
   const { user } = useAuth();
@@ -186,6 +479,7 @@ export default function SettingsPage() {
           <TabsTrigger value="users" className="gap-2" data-testid="tab-users"><UserPlus className="h-4 w-4" /> Usuários</TabsTrigger>
           <TabsTrigger value="permissions" className="gap-2" data-testid="tab-permissions"><Shield className="h-4 w-4" /> Permissões</TabsTrigger>
           <TabsTrigger value="receipt" className="gap-2"><Printer className="h-4 w-4" /> Impressão</TabsTrigger>
+          <TabsTrigger value="network" className="gap-2"><Wifi className="h-4 w-4" /> Rede</TabsTrigger>
         </TabsList>
 
         <TabsContent value="users" className="space-y-4">
@@ -436,11 +730,25 @@ export default function SettingsPage() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="receipt" className="space-y-4">
+        <TabsContent value="receipt" className="space-y-6">
+          <Card className="border-2 border-primary/10">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2"><Store className="h-5 w-5 text-primary" /> Identidade da Loja</CardTitle>
+              <p className="text-sm text-muted-foreground">Configure logo, nome e informações que aparecem nos recibos. Deixe em branco para usar valores padrão.</p>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <ReceiptBrandingForm
+                key={receiptSettings ? 'ready' : 'loading'}
+                branding={receiptSettings?.branding}
+                onSave={(b) => updateReceiptMutation.mutate({ branding: b })}
+                isSaving={updateReceiptMutation.isPending}
+              />
+            </CardContent>
+          </Card>
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2"><Printer className="h-5 w-5" /> Configuração de Recibos</CardTitle>
-              <p className="text-sm text-muted-foreground">Defina o tamanho do papel da sua impressora térmica e preferências de impressão.</p>
+              <CardTitle className="flex items-center gap-2"><Printer className="h-5 w-5" /> Impressão</CardTitle>
+              <p className="text-sm text-muted-foreground">Tamanho do papel e preferências de impressão.</p>
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="space-y-2">
@@ -459,7 +767,7 @@ export default function SettingsPage() {
                     <SelectItem value="a6">A6 (105 mm × 148 mm) - Máximo</SelectItem>
                   </SelectContent>
                 </Select>
-                <p className="text-xs text-muted-foreground">Tamanhos comuns para impressoras térmicas. O recibo será gerado e armazenado automaticamente.</p>
+                <p className="text-xs text-muted-foreground">Tamanhos comuns para impressoras térmicas.</p>
               </div>
               <div className="flex items-center space-x-2">
                 <Checkbox
@@ -472,11 +780,25 @@ export default function SettingsPage() {
                 </Label>
               </div>
               <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 text-sm">
-                <p className="font-medium text-primary mb-2">Onde ficam os recibos armazenados?</p>
-                <p className="text-muted-foreground">Os recibos são guardados na pasta <code className="bg-muted px-1 rounded">receipts/</code> organizados por ano, mês e semana: <code className="bg-muted px-1 rounded text-xs">receipts/2025/02/semana-08/recibo-2025-02-19-15-30-45.html</code></p>
+                <p className="font-medium text-primary mb-2">Onde ficam os recibos?</p>
+                <p className="text-muted-foreground">Pasta <code className="bg-muted px-1 rounded">receipts/</code> organizados por ano, mês e semana.</p>
               </div>
             </CardContent>
           </Card>
+
+          <Card className="border-2 border-primary/10">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2"><FolderOpen className="h-5 w-5 text-primary" /> Ficheiros de Recibos</CardTitle>
+              <CardDescription>Lista de recibos guardados. Cada recibo está vinculado a uma venda no histórico — não é possível apagar um recibo sem a venda correspondente.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ReceiptFilesList />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="network" className="space-y-6">
+          <NetworkAccessCard />
         </TabsContent>
       </Tabs>
     </div>

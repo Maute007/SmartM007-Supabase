@@ -16,9 +16,11 @@ import viteConfig from "../vite.config";
 const viteLogger = createLogger();
 
 export async function setupVite(app: Express, server: Server) {
+  const port = parseInt(process.env.PORT || "9001", 10);
+  const host = process.env.HOST || "localhost";
   const serverOptions = {
     middlewareMode: true,
-    hmr: { server },
+    hmr: false,
     allowedHosts: true as const,
   };
 

@@ -34,6 +34,7 @@ export interface IStorage {
   // Products
   getAllProducts(): Promise<Product[]>;
   getProduct(id: string): Promise<Product | undefined>;
+  getProductByBarcode(barcode: string): Promise<Product | undefined>;
   createProduct(product: InsertProduct): Promise<Product>;
   updateProduct(id: string, product: Partial<InsertProduct>): Promise<Product | undefined>;
   deleteProduct(id: string): Promise<void>;
@@ -159,6 +160,13 @@ export class DatabaseStorage implements IStorage {
     return product;
   }
 
+  async getProductByBarcode(barcode: string): Promise<Product | undefined> {
+    const trimmed = String(barcode || '').trim();
+    if (!trimmed) return undefined;
+    const [product] = await db.select().from(products).where(eq(products.barcode, trimmed)).limit(1);
+    return product;
+  }
+
   async createProduct(product: InsertProduct): Promise<Product> {
     const [newProduct] = await db.insert(products).values(product).returning();
     return newProduct;
@@ -186,6 +194,191 @@ export class DatabaseStorage implements IStorage {
     await db.update(products)
       .set({ stock: sql`${products.stock} + ${quantity}` })
       .where(eq(products.id, id));
+  }
+
+  async findProductByNameUnitCategory(name: string, unit: string, categoryId: string | null): Promise<Product | undefined> {
+    const normName = name.trim().toLowerCase();
+    const conds = [
+      sql`LOWER(TRIM(${products.name})) = ${normName}`,
+      eq(products.unit, unit as any),
+    ];
+    if (categoryId) {
+      conds.push(eq(products.categoryId, categoryId));
+    } else {
+      conds.push(sql`${products.categoryId} IS NULL`);
+    }
+    const [product] = await db.select()
+      .from(products)
+      .where(and(...conds))
+      .limit(1);
+    return product;
+  }
+
+  async findProductByNameUnitPriceCategory(name: string, unit: string, price: string, categoryId: string | null): Promise<Product | undefined> {
+    const normName = name.trim().toLowerCase();
+    const priceNum = parseFloat(String(price));
+    const conds = [
+      sql`LOWER(TRIM(${products.name})) = ${normName}`,
+      eq(products.unit, unit as any),
+      sql`${products.price}::numeric = ${priceNum}::numeric`,
+    ];
+    if (categoryId) {
+      conds.push(eq(products.categoryId, categoryId));
+    } else {
+      conds.push(sql`${products.categoryId} IS NULL`);
+    }
+    const [product] = await db.select()
+      .from(products)
+      .where(and(...conds))
+      .limit(1);
+    return product;
+  }
+
+  async bulkImportProducts(
+    items: Array<{ name: string; sku: string; price: string; costPrice: string; stock: string; minStock: string; unit: string; categoryId: string | null; image?: string }>,
+    mode: 'merge' | 'reset',
+    userId: string,
+    auditExtras?: { ipAddress?: string | null; userAgent?: string | null; riskFlags?: string[] }
+  ): Promise<{ added: number; updated: number; removed: number; details: { added: any[]; updated: any[]; removed: any[] } }> {
+    const details = { added: [] as any[], updated: [] as any[], removed: [] as any[] };
+    let added = 0, updated = 0, removed = 0;
+
+    const allExisting = await this.getAllProducts();
+    const catKey = (id: string | null) => id ?? '_';
+    const fileKeys = new Set(items.map(p => {
+      const n = p.name.trim().toLowerCase();
+      const pr = parseFloat(p.price);
+      return `${n}|${p.unit}|${pr}|${catKey(p.categoryId)}`;
+    }));
+
+    if (mode === 'reset') {
+      const toRemove = allExisting.filter(p => {
+        const k = `${p.name.trim().toLowerCase()}|${p.unit}|${parseFloat(p.price)}|${catKey(p.categoryId)}`;
+        return !fileKeys.has(k);
+      });
+      for (const p of toRemove) {
+        await this.deleteProduct(p.id);
+        removed++;
+        details.removed.push({ name: p.name, quantity: p.stock, price: p.price, unit: p.unit });
+      }
+    }
+
+    const usedSkus = new Set(allExisting.map(p => p.sku));
+    const generateSku = (base: string) => {
+      let s = base;
+      let i = 0;
+      while (usedSkus.has(s)) {
+        s = `${base}-${++i}`;
+      }
+      usedSkus.add(s);
+      return s;
+    };
+
+    const isBlank = (v: string) => v == null || String(v).trim() === '';
+
+    for (const item of items) {
+      let existing: Product | undefined;
+      if (mode === 'merge') {
+        existing = await this.findProductByNameUnitCategory(item.name, item.unit, item.categoryId);
+      } else {
+        existing = await this.findProductByNameUnitPriceCategory(item.name, item.unit, item.price, item.categoryId);
+      }
+
+      if (existing) {
+        if (mode === 'merge') {
+          const updates: Record<string, string | null> = {};
+          const changeList: string[] = [];
+
+          if (!isBlank(item.stock)) {
+            const newStock = parseFloat(item.stock);
+            if (!Number.isNaN(newStock)) {
+              updates.stock = String(newStock);
+              changeList.push('quantidade');
+            }
+          }
+          if (!isBlank(item.price)) {
+            const newPrice = parseFloat(item.price);
+            if (!Number.isNaN(newPrice) && newPrice >= 0) {
+              updates.price = String(newPrice);
+              changeList.push('preço');
+            }
+          }
+          if (!isBlank(item.costPrice)) {
+            const v = parseFloat(item.costPrice);
+            if (!Number.isNaN(v)) updates.costPrice = item.costPrice;
+          }
+          if (!isBlank(item.minStock)) {
+            const v = parseFloat(item.minStock);
+            if (!Number.isNaN(v)) updates.minStock = item.minStock;
+          }
+          if (item.categoryId !== undefined && item.categoryId !== null) updates.categoryId = item.categoryId;
+
+          if (Object.keys(updates).length > 0) {
+            await this.updateProduct(existing.id, updates);
+            updated++;
+            details.updated.push({
+              name: item.name,
+              unit: item.unit,
+              changes: changeList,
+              oldStock: changeList.includes('quantidade') ? existing.stock : undefined,
+              newStock: updates.stock,
+              oldPrice: changeList.includes('preço') ? existing.price : undefined,
+              newPrice: updates.price,
+            });
+          }
+        } else {
+          await this.updateProduct(existing.id, {
+            stock: item.stock || '0',
+            minStock: item.minStock || '5',
+            costPrice: item.costPrice || '0',
+            categoryId: item.categoryId,
+          });
+          updated++;
+          details.updated.push({
+            name: item.name,
+            quantity: item.stock,
+            price: item.price,
+            unit: item.unit,
+          });
+        }
+      } else {
+        const sku = item.sku?.trim() ? generateSku(item.sku) : generateSku(`IMP-${Date.now()}-${added}`);
+        const newProduct = await this.createProduct({
+          name: item.name,
+          sku,
+          barcode: sku,
+          price: isBlank(item.price) ? '0' : item.price,
+          costPrice: isBlank(item.costPrice) ? '0' : item.costPrice,
+          stock: isBlank(item.stock) ? '0' : item.stock,
+          minStock: isBlank(item.minStock) ? '5' : item.minStock,
+          unit: item.unit as any,
+          categoryId: item.categoryId,
+          image: item.image || '',
+        });
+        added++;
+        details.added.push({
+          name: newProduct.name,
+          quantity: newProduct.stock,
+          price: newProduct.price,
+          unit: newProduct.unit,
+        });
+      }
+    }
+
+    await this.createAuditLog({
+      userId,
+      action: 'PRODUCT_IMPORT',
+      entityType: 'product',
+      entityId: null,
+      details: { mode, added, updated, removed, addedList: details.added, updatedList: details.updated, removedList: details.removed },
+      ...(auditExtras && {
+        ipAddress: auditExtras.ipAddress ?? undefined,
+        userAgent: auditExtras.userAgent ?? undefined,
+        riskFlags: auditExtras.riskFlags ?? [],
+      }),
+    });
+
+    return { added, updated, removed, details };
   }
 
   // SALES
@@ -274,9 +467,52 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(auditLogs).orderBy(desc(auditLogs.createdAt)).limit(100);
   }
 
+  async getRecentProductImports(limit = 10): Promise<AuditLog[]> {
+    return await db.select()
+      .from(auditLogs)
+      .where(eq(auditLogs.action, 'PRODUCT_IMPORT'))
+      .orderBy(desc(auditLogs.createdAt))
+      .limit(limit);
+  }
+
+  async getProductImportsByDateRange(startDate: string, endDate: string): Promise<AuditLog[]> {
+    return await db.select()
+      .from(auditLogs)
+      .where(
+        and(
+          eq(auditLogs.action, 'PRODUCT_IMPORT'),
+          sql`DATE(${auditLogs.createdAt}) >= ${startDate}`,
+          sql`DATE(${auditLogs.createdAt}) <= ${endDate}`
+        )
+      )
+      .orderBy(desc(auditLogs.createdAt));
+  }
+
   async createAuditLog(log: InsertAuditLog): Promise<AuditLog> {
     const [newLog] = await db.insert(auditLogs).values(log).returning();
     return newLog;
+  }
+
+  async getAuditLogsByDateRange(
+    startDate: string,
+    endDate: string,
+    startHour?: number,
+    endHour?: number,
+    userId?: string | null
+  ): Promise<AuditLog[]> {
+    const conditions = [
+      sql`DATE(${auditLogs.createdAt}) >= ${startDate}`,
+      sql`DATE(${auditLogs.createdAt}) <= ${endDate}`,
+    ];
+    if (userId) conditions.push(eq(auditLogs.userId, userId));
+    if (startHour !== undefined && endHour !== undefined) {
+      conditions.push(sql`EXTRACT(HOUR FROM ${auditLogs.createdAt}) >= ${startHour}`);
+      conditions.push(sql`EXTRACT(HOUR FROM ${auditLogs.createdAt}) <= ${endHour}`);
+    }
+
+    return await db.select().from(auditLogs)
+      .where(and(...conditions))
+      .orderBy(desc(auditLogs.createdAt));
   }
 
   async getAuditLogsByUserAndDateRange(
@@ -286,21 +522,18 @@ export class DatabaseStorage implements IStorage {
     startHour?: number,
     endHour?: number
   ): Promise<AuditLog[]> {
-    let query = db.select().from(auditLogs).where(
-      and(
-        eq(auditLogs.userId, userId),
-        sql`DATE(${auditLogs.createdAt}) >= ${startDate}`,
-        sql`DATE(${auditLogs.createdAt}) <= ${endDate}`
-      )
-    );
-
+    const conditions = [
+      eq(auditLogs.userId, userId),
+      sql`DATE(${auditLogs.createdAt}) >= ${startDate}`,
+      sql`DATE(${auditLogs.createdAt}) <= ${endDate}`,
+    ];
     if (startHour !== undefined && endHour !== undefined) {
-      query = query.where(
-        sql`EXTRACT(HOUR FROM ${auditLogs.createdAt}) >= ${startHour} AND EXTRACT(HOUR FROM ${auditLogs.createdAt}) <= ${endHour}`
-      );
+      conditions.push(sql`EXTRACT(HOUR FROM ${auditLogs.createdAt}) >= ${startHour}`);
+      conditions.push(sql`EXTRACT(HOUR FROM ${auditLogs.createdAt}) <= ${endHour}`);
     }
-
-    return await query.orderBy(desc(auditLogs.createdAt));
+    return await db.select().from(auditLogs)
+      .where(and(...conditions))
+      .orderBy(desc(auditLogs.createdAt));
   }
 
   // DAILY EDIT TRACKING

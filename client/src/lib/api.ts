@@ -17,6 +17,7 @@ export interface User {
 export interface Product {
   id: string;
   sku: string;
+  barcode?: string | null;
   name: string;
   categoryId: string | null;
   price: string;
@@ -176,6 +177,15 @@ export const productsApi = {
     return res.json();
   },
 
+  getByBarcode: async (barcode: string): Promise<Product> => {
+    const res = await fetch(`${API_BASE}/products/by-barcode/${encodeURIComponent(barcode)}`, { credentials: 'include' });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Produto não encontrado');
+    }
+    return res.json();
+  },
+
   create: async (data: any): Promise<Product> => {
     const res = await fetch(`${API_BASE}/products`, {
       method: 'POST',
@@ -225,6 +235,112 @@ export const productsApi = {
     if (!res.ok) {
       const error = await res.json();
       throw new Error(error.error || 'Erro ao aumentar estoque');
+    }
+    return res.json();
+  },
+
+  import: async (data: { products: any[]; mode: 'merge' | 'reset' }): Promise<{ added: number; updated: number; removed: number; details: { added: any[]; updated: any[]; removed: any[] } }> => {
+    const res = await fetch(`${API_BASE}/products/import`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+      credentials: 'include'
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.error || 'Erro ao importar produtos');
+    }
+    return res.json();
+  }
+};
+
+// Network (IP dinâmico para acesso na rede local)
+export const networkApi = {
+  getLocalAccess: async (): Promise<{ baseUrl: string | null; ips: string[]; port: number }> => {
+    const res = await fetch(`${API_BASE}/network/local-access`);
+    if (!res.ok) throw new Error('Erro ao obter IP');
+    return res.json();
+  }
+};
+
+// Scanner session (for listing)
+export interface ScannerSessionInfo {
+  token: string;
+  userId: string;
+  userName: string;
+  createdAt: number;
+  lastAccess: number;
+  userAgent: string;
+  deviceType: 'mobile' | 'desktop' | 'unknown';
+}
+
+// Scanner (remote) API
+export const scannerApi = {
+  start: async (): Promise<{ token: string; url: string }> => {
+    const res = await fetch(`${API_BASE}/scanner/start`, {
+      method: 'POST',
+      credentials: 'include'
+    });
+    if (!res.ok) throw new Error('Erro ao gerar link do scanner');
+    return res.json();
+  },
+  poll: async (token: string): Promise<{ barcodes: string[] }> => {
+    const res = await fetch(`${API_BASE}/scanner/poll/${encodeURIComponent(token)}`, {
+      credentials: 'include'
+    });
+    if (!res.ok) throw new Error('Erro ao obter códigos');
+    return res.json();
+  },
+  send: async (token: string, barcode: string): Promise<{ ok: boolean; product?: { name: string } }> => {
+    const res = await fetch(`${API_BASE}/scanner/send`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, barcode }),
+      credentials: 'include'
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Erro ao enviar');
+    }
+    return res.json();
+  },
+  ping: async (token: string): Promise<{ ok: boolean; expiresIn: number; deviceType: string }> => {
+    const res = await fetch(`${API_BASE}/scanner/ping`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token })
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Link expirado');
+    }
+    return res.json();
+  },
+  sessions: async (): Promise<ScannerSessionInfo[]> => {
+    const res = await fetch(`${API_BASE}/scanner/sessions`, { credentials: 'include' });
+    if (!res.ok) throw new Error('Erro ao listar sessões');
+    return res.json();
+  },
+  revoke: async (token: string): Promise<void> => {
+    const res = await fetch(`${API_BASE}/scanner/revoke/${encodeURIComponent(token)}`, {
+      method: 'POST',
+      credentials: 'include'
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Erro ao revogar');
+    }
+  },
+  renew: async (token: string): Promise<{ token: string; url: string }> => {
+    const res = await fetch(`${API_BASE}/scanner/renew`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token }),
+      credentials: 'include'
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Erro ao renovar');
     }
     return res.json();
   }
@@ -318,15 +434,36 @@ export const auditLogsApi = {
     const res = await fetch(`${API_BASE}/audit-logs`, { credentials: 'include' });
     if (!res.ok) throw new Error('Erro ao buscar logs de auditoria');
     return res.json();
+  },
+  getRecentImports: async (limit = 10): Promise<AuditLog[]> => {
+    const res = await fetch(`${API_BASE}/audit-logs/recent-imports?limit=${limit}`, { credentials: 'include' });
+    if (!res.ok) throw new Error('Erro ao buscar importações');
+    return res.json();
+  },
+  getImportsByDateRange: async (startDate: string, endDate: string): Promise<AuditLog[]> => {
+    const res = await fetch(`${API_BASE}/audit-logs/imports?startDate=${startDate}&endDate=${endDate}`, { credentials: 'include' });
+    if (!res.ok) throw new Error('Erro ao buscar importações');
+    return res.json();
   }
 };
 
 // Receipt Settings API
 export type ReceiptPaperSize = '80x60' | '80x70' | '80x80' | 'a6';
 
+export interface ReceiptStoreBranding {
+  storeName?: string;
+  storeTagline?: string;
+  storeAddress?: string;
+  storePhone?: string;
+  storeEmail?: string;
+  logoBase64?: string;
+  footerText?: string;
+}
+
 export interface ReceiptSettings {
   paperSize: ReceiptPaperSize;
   printOnConfirm: boolean;
+  branding?: ReceiptStoreBranding;
 }
 
 export const receiptSettingsApi = {
@@ -350,6 +487,12 @@ export const receiptSettingsApi = {
   }
 };
 
+export interface ReceiptFile {
+  path: string;
+  saleId: string;
+  createdAt: string;
+}
+
 export const receiptsApi = {
   save: async (saleId: string): Promise<{ success: boolean; path: string }> => {
     const res = await fetch(`${API_BASE}/receipts/save`, {
@@ -361,6 +504,13 @@ export const receiptsApi = {
     if (!res.ok) throw new Error('Erro ao guardar recibo');
     return res.json();
   },
+  list: async (): Promise<ReceiptFile[]> => {
+    const res = await fetch(`${API_BASE}/receipts/list`, { credentials: 'include' });
+    if (!res.ok) throw new Error('Erro ao listar recibos');
+    return res.json();
+  },
+  getFileUrl: (saleId: string, download = false): string =>
+    `/api/receipts/file/${saleId}${download ? '?download=1' : ''}`,
 };
 
 // Webhooks API
