@@ -30,7 +30,7 @@ export default function Tasks() {
   const { data: users = [] } = useQuery({
     queryKey: ['users'],
     queryFn: usersApi.getAll,
-    enabled: !!user,
+    enabled: !!user && (user.role === 'admin' || user.role === 'manager'),
   });
 
   const createTaskMutation = useMutation({

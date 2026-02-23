@@ -4,7 +4,7 @@ import { createServer as createHttpServer, type Server } from "http";
 import { createServer as createHttpsServer } from "https";
 import selfsigned from "selfsigned";
 import { storage } from "./storage";
-import { insertUserSchema, insertProductSchema, insertCategorySchema, insertSaleSchema } from "@shared/schema";
+import { insertUserSchema, insertProductSchema, insertCategorySchema, insertSaleSchema, insertTaskSchema } from "@shared/schema";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
 import { seedDatabase } from "../db/init";
@@ -555,6 +555,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  const UNIT_ALIASES: Record<string, string> = {
+    un: 'un', unidade: 'un', unidades: 'un', unit: 'un', pç: 'un', pcs: 'un', peça: 'un', peças: 'un',
+    kg: 'kg', quilograma: 'kg', quilogramas: 'kg', quilo: 'kg', quilos: 'kg', kilograma: 'kg',
+    g: 'g', grama: 'g', gramas: 'g', gr: 'g',
+    pack: 'pack', pacote: 'pack', pacotes: 'pack', pct: 'pack',
+    box: 'box', caixa: 'box', caixas: 'box', cx: 'box',
+  };
+  const VALID_UNITS = ['un', 'kg', 'g', 'pack', 'box'];
+  const normalizeUnit = (u: string) => {
+    const key = String(u || 'un').trim().toLowerCase();
+    return UNIT_ALIASES[key] || (VALID_UNITS.includes(key) ? key : 'un');
+  };
+
   app.post("/api/products/import", requireAuth, requireAdminOrManager, async (req: Request, res: Response) => {
     try {
       const { products: items, mode } = req.body;
@@ -564,13 +577,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const ctx = getAuditContext(req);
       const result = await storage.bulkImportProducts(
         items.map((p: any) => ({
-          name: String(p.name || ''),
-          sku: String(p.sku || ''),
+          name: String(p.name || '').trim(),
+          sku: String(p.sku || '').trim(),
           price: (p.price != null && String(p.price).trim() !== '') ? String(p.price) : '',
           costPrice: (p.costPrice != null && String(p.costPrice).trim() !== '') ? String(p.costPrice) : '',
           stock: (p.stock != null && String(p.stock).trim() !== '') ? String(p.stock) : '',
           minStock: (p.minStock != null && String(p.minStock).trim() !== '') ? String(p.minStock) : '',
-          unit: String(p.unit || 'un'),
+          unit: normalizeUnit(p.unit),
           categoryId: p.categoryId || null,
           image: p.image || '',
         })),
@@ -1353,10 +1366,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/tasks", requireAuth, async (req: Request, res: Response) => {
     try {
-      const taskData = {
-        ...req.body,
-        createdBy: req.session.userId!
-      };
+      const { title, assignedTo, assignedToId } = req.body;
+      const taskData = insertTaskSchema.parse({
+        title: String(title ?? '').trim(),
+        assignedTo: ['all', 'admin', 'manager', 'seller', 'user'].includes(assignedTo) ? assignedTo : 'all',
+        ...(assignedTo === 'user' && assignedToId ? { assignedToId } : {}),
+        createdBy: req.session.userId!,
+      });
+      if (!taskData.title) {
+        return res.status(400).json({ error: 'O título da tarefa é obrigatório.' });
+      }
       const newTask = await storage.createTask(taskData);
       
       // Criar notificação para usuários afetados
@@ -1389,6 +1408,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       res.json(newTask);
     } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: fromZodError(error).toString() });
+      }
       console.error("Create task error:", error);
       res.status(500).json({ error: "Erro ao criar tarefa" });
     }

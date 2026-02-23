@@ -265,8 +265,11 @@ export default function Products() {
     const minStock = minStockRaw != null ? String(minStockRaw) : '';
     const unitRaw = String(getVal(['Unidade', 'unit', 'unidade']) ?? 'un').trim().toLowerCase();
     const unit = UNIT_ALIASES[unitRaw] || (UNIT_OPTIONS.includes(unitRaw as any) ? unitRaw : 'un');
-    const categoryName = getVal(['Categoria', 'category', 'categoria']);
-    const categoryId = categories.find(c => c.name === categoryName)?.id || categories[0]?.id || null;
+    const categoryNameRaw = getVal(['Categoria', 'category', 'categoria']);
+    const categoryName = categoryNameRaw ? String(categoryNameRaw).trim() : null;
+    const categoryId = categoryName
+      ? categories.find(c => c.name.trim().toLowerCase() === categoryName.toLowerCase())?.id || categories[0]?.id || null
+      : categories[0]?.id || null;
     return { name: String(name), sku: String(sku), price, costPrice, stock, minStock, unit, categoryId, image: '' };
   };
 
